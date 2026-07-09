@@ -1,0 +1,8 @@
+{
+  "name": "calendar-manager-scripts",
+  "private": true,
+  "description": "Screenshot helper for the calendar-manager skill. Run `npm install` in this folder once.",
+  "dependencies": {
+    "puppeteer-core": ">=22.0.0"
+  }
+}

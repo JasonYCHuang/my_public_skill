@@ -1,0 +1,18 @@
+# Example MCP server entry for Hermes agent's ~/.hermes/config.yaml
+#
+# This adds Google Calendar access via @cocal/google-calendar-mcp
+# (https://github.com/nspady/google-calendar-mcp), a maintained, open-source
+# stdio MCP server. Copy the `google-calendar:` block below into the
+# `mcp_servers:` section of your own ~/.hermes/config.yaml -- don't replace
+# the whole file, just merge this key in alongside whatever else is there.
+#
+# See references/hermes-setup.md in this skill for the full walkthrough
+# (getting gcp-oauth.keys.json, first-run auth, verifying tool names).
+
+mcp_servers:
+  google-calendar:
+    command: "npx"
+    args: ["-y", "@cocal/google-calendar-mcp"]
+    env:
+      GOOGLE_OAUTH_CREDENTIALS: "/absolute/path/to/gcp-oauth.keys.json"
+    enabled: true
