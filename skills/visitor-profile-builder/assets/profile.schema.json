@@ -1,0 +1,108 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "visitor-profile-builder profile.json",
+  "description": "Intermediate data format shared by scripts/xlsx_to_profile_json.py, scripts/profile_json_to_xlsx.py and scripts/profile_json_to_html.py. Core fields (name..note) map 1:1 onto the 個人信息登記表 xlsx template. Extended fields (research_areas, achievements, publications) are HTML-only additions used for richer profiles (e.g. academics) where the xlsx template has no matching section — profile_json_to_xlsx.py ignores them.",
+  "type": "object",
+  "required": ["name"],
+  "properties": {
+    "timestamp": {"type": "string", "description": "彙整/更新時間，例如 2026/07/09"},
+    "name": {"type": "string", "description": "姓名（中文）"},
+    "name_en": {"type": "string", "description": "英文姓名，選填，僅影響 HTML 副標"},
+    "subtitle": {"type": "string", "description": "HTML 標頭副標題；不填則自動取 positions[0]"},
+    "gender": {"type": ["string", "null"], "description": "查無資料時用 '不詳（未公開）'，勿留空白或猜測"},
+    "birth": {"type": ["string", "null"]},
+    "zodiac": {"type": ["string", "null"]},
+    "contact": {"type": ["string", "null"], "description": "email／電話等，多筆用 ／ 分隔"},
+    "hometown": {"type": ["string", "null"]},
+    "education": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "school": {"type": "string"},
+          "major": {"type": "string"},
+          "degree_level": {"type": "string", "description": "學士／碩士／博士 等"},
+          "degree": {"type": "string", "description": "學位全名或年份備註"}
+        }
+      }
+    },
+    "positions": {
+      "type": "array",
+      "items": {"type": "string"},
+      "description": "現任職位，依重要性由上到下排列；HTML 會將第一筆加粗顯示"
+    },
+    "career": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "date": {"type": "string", "description": "起止年月，格式不拘但同一份profile內盡量一致"},
+          "org": {"type": "string"},
+          "role": {"type": "string"}
+        }
+      }
+    },
+    "research_areas": {
+      "type": "array",
+      "items": {"type": "string"},
+      "description": "擴充欄位（HTML限定）：研究領域／專長領域 pill 標籤"
+    },
+    "achievements": {
+      "type": "array",
+      "items": {"type": "string"},
+      "description": "擴充欄位（HTML限定）：榮譽獎項與學術/職業成就"
+    },
+    "publications": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "year": {"type": "string"},
+          "title": {"type": "string"},
+          "citations": {"type": ["string", "number"]}
+        }
+      },
+      "description": "擴充欄位（HTML限定）：代表著作／案例"
+    },
+    "metrics": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "num": {"type": "string", "description": "例如 1,416"},
+          "label": {"type": "string", "description": "例如 總引用次數"}
+        }
+      },
+      "description": "擴充欄位（HTML限定）：3 個一組的統計小卡（如 Google Scholar 指標）"
+    },
+    "note": {
+      "type": ["string", "null"],
+      "description": "備註／免責聲明。務必註明：(1) 資料彙整依據 (2) 推估內容未經官方佐證 (3) 照片來源與非官方性質"
+    },
+    "photos": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["path", "caption"],
+        "properties": {
+          "path": {"type": "string", "description": "本機檔案路徑（產生時讀取後轉為 base64/嵌入圖片）"},
+          "caption": {"type": "string", "description": "顯示於照片下方的簡短來源說明"},
+          "source_url": {"type": "string", "description": "完整來源網址，寫入 sources 區塊"}
+        }
+      },
+      "description": "0～2 張皆可；沒有照片就留空陣列，不要留空物件或假路徑"
+    },
+    "sources": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["title", "url"],
+        "properties": {
+          "title": {"type": "string"},
+          "url": {"type": "string"}
+        }
+      },
+      "description": "所有事實依據的原始網址，逐一列出，不可省略"
+    }
+  }
+}

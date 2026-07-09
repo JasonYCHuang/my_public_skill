@@ -1,0 +1,53 @@
+{
+  "$comment": "此為虛構範例，僅用來展示 profile.json 的每個欄位怎麼填——姓名、單位、經歷、連結、照片路徑全部是假造的，請勿當成任何真實人物的資料，也不要把任何真實個人資料寫進這個檔案（本檔案會隨 skill 一起被複製散布）。",
+  "timestamp": "2026/01/01",
+  "name": "王小明",
+  "name_en": "Wang Xiaoming",
+  "subtitle": "示範大學資訊工程學系　特聘教授（範例）",
+  "gender": "男（範例值）",
+  "birth": "不詳（未公開）",
+  "zodiac": "不詳（未公開）",
+  "contact": "example@demo-university.edu",
+  "hometown": "不詳（未公開）",
+  "education": [
+    {"school": "示範大學", "major": "資訊工程學系", "degree_level": "學士", "degree": "範例年份畢業"},
+    {"school": "示範大學", "major": "資訊工程學系", "degree_level": "碩士", "degree": "範例年份畢業"},
+    {"school": "海外示範大學（Demo Institute of Technology）", "major": "電腦科學系", "degree_level": "博士", "degree": "範例年份（指導教授：範例姓名）"}
+  ],
+  "positions": [
+    "示範大學資訊工程學系　特聘教授",
+    "示範大學資訊系統與應用研究所　所長",
+    "示範實驗室（Demo Systems Lab）　主持人"
+  ],
+  "career": [
+    {"date": "範例年份起", "org": "海外示範研究機構", "role": "博士後研究員"},
+    {"date": "範例年份起", "org": "示範大學資訊工程學系", "role": "助理教授"},
+    {"date": "範例年份起", "org": "示範大學資訊工程學系", "role": "副教授"},
+    {"date": "範例年份起", "org": "示範大學資訊工程學系", "role": "教授"},
+    {"date": "現任", "org": "示範大學資訊系統與應用研究所", "role": "所長"}
+  ],
+  "research_areas": [
+    "分散式系統 Distributed Systems（範例）",
+    "雲端計算 Cloud Computing（範例）",
+    "人工智能 AI（範例）"
+  ],
+  "achievements": [
+    "範例年份　示範大學傑出教學獎（範例）",
+    "範例年份　指導學生團隊獲某國際競賽總冠軍（範例）"
+  ],
+  "publications": [
+    {"year": "範例年份", "title": "示範論文標題一（Example Paper Title One）", "citations": "示範引用數"},
+    {"year": "範例年份", "title": "示範論文標題二（Example Paper Title Two）", "citations": "示範引用數"}
+  ],
+  "metrics": [
+    {"num": "示範數字", "label": "總引用次數"},
+    {"num": "示範數字", "label": "h-index"},
+    {"num": "示範數字", "label": "i10-index"}
+  ],
+  "note": "本檔案為 profile.json 欄位示範，所有姓名、單位、年份、連結、照片均為虛構占位資料。實際使用時請依真實查證結果填寫，並在此欄位誠實註明：資料來源類別、哪些內容是推估而非確認、以及照片是否為非官方來源，參見 references/note-writing-guide.md。",
+  "photos": [],
+  "sources": [
+    {"title": "範例來源一：所屬單位教師頁面", "url": "https://example.com/faculty-page"},
+    {"title": "範例來源二：學術資料庫個人頁面", "url": "https://example.com/scholar-profile"}
+  ]
+}
