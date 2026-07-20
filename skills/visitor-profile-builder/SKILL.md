@@ -81,10 +81,13 @@ python3 -m venv /tmp/vpb-venv && /tmp/vpb-venv/bin/pip install openpyxl Pillow
 and call scripts as `/tmp/vpb-venv/bin/python3 scripts/....py`.
 
 Only if you'll be generating **PNG** output: run `npm install` once inside
-`scripts/` (pulls in `puppeteer-core`), and make sure a system Chrome or
-Chromium is installed — `scripts/html_to_png.js` drives the existing browser
-install rather than downloading its own, so no PNG-specific setup is needed
-beyond having Chrome present.
+`scripts/` (pulls in `puppeteer-core`). `scripts/html_to_png.js` tries the
+system Chrome (puppeteer's `channel: 'chrome'`) first, and if that fails
+(e.g. no Chrome/Chromium installed and no root to `apt install`), falls
+through to the Chrome Puppeteer itself downloaded via
+`npx puppeteer browsers install chrome` (cache under
+`~/.cache/puppeteer/chrome/`). So on most setups no manual browser install
+is needed beyond running that one `npx` line.
 
 ## Two entry points
 
@@ -157,6 +160,14 @@ named visitor/official/academic). Steps:
    loaded, an image path broken). Don't just trust that the command exited
    0.
 
+   **After PNG verification, send it inline in the chat as a `MEDIA:` line
+   on its own** — don't just announce that a file was written. The user
+   asked for an image, and the whole point is they can see it without
+   ssh-ing into the server. If the first send doesn't render, retry as a
+   single-line standalone message, then a smaller resized version, then
+   regenerate — see the "Generated PNGs can be shown inline" bug note
+   below for the full failure-mode list before giving up.
+
 ## Folder conventions used in this project
 
 ```
@@ -196,3 +207,113 @@ visitor-profile-builder/
     ├── package.json                -- npm install target for html_to_png.js (puppeteer-core)
     └── .gitignore                  -- excludes node_modules/ and generated *.png from git
 ```
+
+## Common pitfalls — workflow-level mistakes that look like skill bugs
+
+These are not code bugs but workflow-level traps any agent using this
+skill is likely to fall into. Each one was hit at least once in real
+use. New ones should be appended below; do not silently rewrite past
+entries.
+
+- **The "找不到照片" fallback is "純文字版", not "AI generate a face".**
+  When the user asks you to source a photo and web search / Bing image
+  search returns nothing but stock photos, other people's portraits, or
+  university stock imagery that doesn't match the subject, the right
+  move is to fall back to the "no photo" placeholder rendered by the
+  HTML template (the dashed-border card with the SVG person icon) —
+  **NOT** to call `image_generate` with a prompt like "generate a
+  realistic portrait of [name], age 50, male, professor" and paste the
+  result into the HTML as if it were real. The first one is honest;
+  the second one is a fabricated photo of a real person and is the
+  exact failure mode this skill's privacy section is built to prevent.
+  If `image_generate` is used at all for this skill, it's for design
+  mockups of the layout — never for the subject's face. Same rule
+  applies when the subject is a public figure; visibility does not
+  lower the bar for "verified photo only."
+- **60-minute silent = default choice, not "ask again later".** If the
+  user doesn't reply within ~60 minutes to an `AskUserQuestion`-style
+  choice (e.g. photo candidates, xlsx vs HTML), do NOT block. Pick the
+  safer default (usually: no photo, both formats anyway), keep working,
+  and tell the user clearly which default you picked so they can
+  override later. This matters especially for cron / scheduled tasks
+  but applies in interactive sessions too — the user's "I'll reply
+  later" is a real signal, not a stalling action.
+- **Tag every uncertain field with the exact phrasing this skill ships,
+  not your own variant.** A user agent (or a downstream compliance
+  reviewer) reading the generated profile should be able to grep for
+  `"不詳（未公開）"` / `"null"` / etc. and find every unverified cell in
+  one pass. Don't paraphrase to "未知" or "—" or "TBD" or "未提供" —
+  pick the canonical phrasing the skill's `assets/profile.example.json`
+  uses and stick to it. The phrasing is part of the skill's API
+  contract, not a style preference.
+- **Never run the user's personal calendar / iCloud tooling from inside
+  this skill.** This skill produces HTML + xlsx + PNG only. If the user
+  says "and also add this to my iCloud," that's a sibling skill
+  (`calendar-manager` for `test-ceo-calendar`-style backends,
+  `icloud-calendar` otherwise) — `delegate_task` to it, don't try to
+  combine iCloud writes into `scripts/html_to_png.js` or the HTML
+  generator. Mixing the two skills in one pipeline silently writes
+  the wrong format (see `calendar-manager` SKILL.md "Common pitfalls"
+  for the iCloud-CLI-shape mismatch — same trap on the way back).
+- **`profile.example.json` must stay fictional.** Before checking in
+  any change to `assets/`, confirm that:
+  - `profile.example.json` still uses a fully fictional name and no
+    real person's facts. A copy-paste of a real dossier into the
+    example file is exactly the kind of bug that travels with every
+    future redistribution of this skill.
+  - The worked example covers every field (so new users see what a
+    "fully filled" profile looks like, including the unverified fields
+    filled with `"不詳（未公開）"` — this is *teaching* them the
+    phrasing convention).
+  - The reference photos in `assets/` (if any) are clearly labeled as
+    stock / placeholder, never real.
+
+## Bugs found and fixed — watch for their class
+
+- `scripts/html_to_png.js` used to launch puppeteer with
+  `channel: 'chrome'`, which only works when the OS has Chrome/Chromium
+  installed (macOS, or a Linux box where `apt install chromium` was
+  possible). On a headless / container Linux install without root, every
+  call failed with an opaque `Could not find Chrome` error and the user
+  had to figure out a workaround themselves. **Fixed**: the script now
+  falls through to Puppeteer's own downloaded Chrome at
+  `~/.cache/puppeteer/chrome/linux-<rev>/chrome-linux64/chrome`. The
+  one-liner that puts a Chrome there is
+  `npx puppeteer browsers install chrome` — no root needed. The
+  fallback also passes `--no-sandbox` because container environments
+  often lack the setuid sandbox setup that puppeteer expects. This is
+  the same fix that lives in the sibling `calendar-manager` skill's
+  `scripts/screenshot.js` — if you ever refactor one, mirror the change
+  to the other; they're the same code shape with different default
+  viewports. Don't remove the fallback even if you only ever test on
+  macOS — the container-Linux case is exactly the one that fails
+  silently.
+- **Generated PNGs can be shown inline in the chat with `MEDIA:` markup
+  — don't assume they're unreadable.** When the user asks for a PNG,
+  the natural end of the workflow is *showing them the image*, not just
+  writing it to disk. On platforms that support it (Hermes' WeChat
+  surface, Telegram, Discord with image attachments, etc.), embedding
+  `MEDIA:<absolute path>` on its own line in the response renders the
+  file as a native chat attachment. A first attempt at this that fails
+  to render does NOT mean the platform is incapable — it often just
+  means the agent assumed the wrong root cause (e.g. "the PNG is too
+  big," "the platform doesn't support images," "I have no upload tool")
+  and stopped trying. The right move on a first miss is to retry as a
+  short standalone message with the `MEDIA:` line and *nothing else* —
+  long surrounding prose / tables / multiple `MEDIA:` blocks in one
+  message have been observed to suppress the inline render on some
+  surfaces, even when a single `MEDIA:` line on its own would have
+  worked. If it still doesn't render after that, ask the user to
+  confirm their client is the same one that's successfully received
+  other media (e.g. calendar PNGs) before declaring the path broken.
+  Don't fall back to "I can't upload to chat" — that's almost never
+  true, and it strands the user with a file path they can't act on.
+- **The first failure is rarely the real cause.** When an inline
+  attachment fails to render, the failure mode that *did* work in the
+  end is usually some small variation of the original send (different
+  size, single line, fewer surrounding tokens), not a wholly new
+  delivery mechanism. Before recommending the user switch clients,
+  install a server, or scp the file themselves, try at least 2-3 cheap
+  variations on the original delivery: (a) single line, no surrounding
+  text, (b) the smaller resized version, (c) a regenerated PNG with a
+  different aspect ratio. One of those almost always lands.
