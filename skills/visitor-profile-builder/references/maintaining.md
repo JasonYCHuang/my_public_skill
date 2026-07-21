@@ -63,6 +63,19 @@ family name `fonts-noto-cjk` actually registers — `"Noto Sans TC"` alone
 does not match it) in the stack, and the apt line in README. If you touch
 `font-family`, keep a Linux-installable CJK family in it.
 
+## Run the tests
+
+```bash
+python3 -m pytest tests/ -q
+```
+
+Under a second, no Chrome, no network. `tests/test_docs_consistency.py` is
+the one to know about: it checks that the prose still matches the code —
+dangling file references, functions named in docs that no longer exist,
+limits that drifted from the schema, and whether
+`assets/profile.example.html` was regenerated. The rule two sections up is
+enforced there rather than left to habit. See `tests/README.md`.
+
 ## Verifying the Linux path at all
 
 Everything in the two sections above fails only on Linux, so a Mac dev box
