@@ -125,7 +125,12 @@ def extract(path):
         for r in range(first_row, last_row + 1):
             v = ws.cell(row=r, column=2).value
             if not is_placeholder(v):
-                data["positions"].append(v)
+                # cell_value, not the raw cell: openpyxl hands back whatever
+                # type the cell holds, and a position typed as a bare year
+                # (or a date-formatted cell) came through as an int/datetime,
+                # which then failed schema validation as "應為 string". Every
+                # other field here already goes through cell_value.
+                data["positions"].append(cell_value(v))
 
     career_range = find_section_rows(ws, "主要履歷")
     if career_range:

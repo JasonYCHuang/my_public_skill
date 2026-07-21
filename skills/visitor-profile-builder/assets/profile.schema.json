@@ -5,7 +5,7 @@
   "type": "object",
   "additionalProperties": false,
   "required": [
-    "name", "gender", "birth", "zodiac", "contact", "hometown",
+    "name", "gender", "birth", "zodiac", "hometown", "contact",
     "education", "positions", "career", "photos"
   ],
   "properties": {
@@ -128,6 +128,7 @@
       "description": "資料來源清單，渲染於頁尾，非欄位。所有事實依據的原始網址逐一列出，硬限制至少 1 筆。",
       "items": {
         "type": "object",
+        "additionalProperties": false,
         "required": ["title", "url"],
         "properties": {
           "title": {"type": "string"},
