@@ -13,8 +13,14 @@ Two severities, deliberately:
 
   errors   -- the record breaks the field contract or the rendered layout.
               Generation stops.
-  warnings -- editorial: the output is valid but unusually long, or carries
-              data the chosen format will silently drop. Generation continues.
+  warnings -- diligence: the record renders fine but was researched or
+              documented incompletely (no note, photos whose source isn't in
+              sources, no verifiable url). Generation continues.
+
+Several of the warnings encode rules that used to live only as prose in
+SKILL.md. That matters for portability: an instruction in SKILL.md is advice
+each new model has to read and choose to follow, while the same rule checked
+here behaves identically no matter who filled the JSON in.
 
 All four count ceilings (education ≤5, positions ≤3, career ≤10, photos ≤2)
 are spec numbers, so all four are errors. The x-soft-max mechanism below is
@@ -129,6 +135,62 @@ def validate(data, target=None):
                 f"{field}：{len(value)} 筆，超過建議上限 {soft_max} 筆。"
                 "版面會偏長，確認是否精簡。"
             )
+
+    # 3b. Diligence rules that used to live only as prose in SKILL.md and
+    #     references/photo-sourcing.md. Moving them here is the point: an
+    #     instruction in SKILL.md is advice a model may or may not follow, and
+    #     it has to be re-followed correctly by every future model the skill is
+    #     ported to. The same rule expressed here fires the same way regardless
+    #     of who filled the JSON in.
+    #
+    #     Warnings, never errors. These are about how carefully a profile was
+    #     researched, not whether it can be rendered — and entry point A
+    #     legitimately produces a bare profile that the user then edits. An
+    #     error here would break the documented two-command workflow.
+    photos = data.get("photos") or []
+    note = (data.get("note") or "").strip()
+    sources = data.get("sources") or []
+
+    # SKILL.md: 「務必註明：(1) 資料彙整依據 (2) 推估內容未經官方佐證
+    # (3) 照片來源與非官方性質」。An absent note means none of the three
+    # were stated.
+    if not note:
+        warnings.append(
+            "note 未填。這是唯一能告訴讀者「哪些欄位該再查證」的地方，"
+            "至少寫明資料彙整依據；寫法見 references/note-writing-guide.md。"
+        )
+    elif photos and not any(k in note for k in ("照片", "相片", "大頭照")):
+        # photo-sourcing.md §3: 非官方來源與低解析度要在 note 講明。
+        warnings.append(
+            f"有 {len(photos)} 張照片，但 note 未提及照片。"
+            "照片多為非官方來源且解析度低，需在 note 標明出處與非官方性質。"
+        )
+
+    # photo-sourcing.md §5: source_url 要一併寫進頂層 sources，否則照片的
+    # 出處不會出現在頁尾的來源清單裡，等於無法回溯。
+    listed_urls = {s.get("url", "") for s in sources if isinstance(s, dict)}
+    for i, p in enumerate(photos):
+        if not isinstance(p, dict):
+            continue
+        src_url = p.get("source_url")
+        if src_url and src_url not in listed_urls:
+            warnings.append(
+                f"photos[{i}] 的 source_url 未列入 sources，"
+                "照片出處不會出現在頁尾來源清單，請一併加入。"
+            )
+
+    # SKILL.md: 「`sources` is not optional. List every URL you actually pulled
+    # a fact from; a reviewer may need to verify any single line.」A list where
+    # nothing has a url satisfies minItems but is unverifiable — and the HTML
+    # drops the whole footer, so the reader sees no sources at all. This is
+    # exactly what entry point A seeds.
+    if sources and not any(
+        isinstance(s, dict) and s.get("url") for s in sources
+    ):
+        warnings.append(
+            "sources 沒有任何可用網址，頁尾的資料來源區塊會整個不顯示。"
+            "請把實際查證的網址填進去（入口 A 產生的『原始來源檔案』是佔位項，需替換）。"
+        )
 
     # 4. Fields the chosen output format would silently drop. Since the
     #    2026-07 unification both formats carry all 10 fields, so this can

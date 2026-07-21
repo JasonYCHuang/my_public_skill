@@ -108,7 +108,7 @@
         "required": ["path", "caption"],
         "properties": {
           "path": {"type": "string", "minLength": 1, "description": "本機檔案路徑（產生時讀取後轉為 base64/嵌入圖片）"},
-          "caption": {"type": "string", "description": "顯示於照片下方的簡短來源說明"},
+          "caption": {"type": "string", "minLength": 1, "description": "顯示於照片下方的簡短來源說明。必填非空：它渲染在縮圖下方，空字串會留下一塊沒有說明的照片，而照片來源正是最需要交代的部分。"},
           "source_url": {"type": "string", "description": "完整來源網址，一併寫入 sources"}
         }
       }

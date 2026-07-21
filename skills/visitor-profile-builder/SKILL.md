@@ -86,6 +86,11 @@ The more common case. Steps:
      `references/note-writing-guide.md` for phrasing patterns.
    - **`sources` is not optional.** List every URL you actually pulled a
      fact from; a reviewer may need to verify any single line.
+   - The validator warns (without blocking) when `note` is empty, when
+     photos are attached but `note` never mentions them, when a photo's
+     `source_url` is missing from `sources`, or when no source carries a
+     usable url. **Read those warnings — they are the checkable half of the
+     rules above, not noise.**
    - **The record is a closed set of 10 fields** — 姓名／性別／出生年月／
      生肖／籍貫／聯繫方式／教育經歷／現任職位（≤3）／主要履歷（≤10）／照片
      （≤2）. All ten are required, and any key outside the schema is an

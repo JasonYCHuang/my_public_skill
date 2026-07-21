@@ -126,6 +126,77 @@ def test_validate_or_exit_returns_data_when_clean(profile):
     assert validate_or_exit(profile) is profile
 
 
+# --- 盡職查證（原本只寫在 SKILL.md 裡的規則）---------------------------------
+#
+# 全部是 warning：這些規則講的是「查得夠不夠仔細」，不是「能不能渲染」。
+# 做成 error 會擋掉入口 A 那條文件明載的兩行流程。
+
+def warnings_for(profile):
+    return validate(profile)[1]
+
+
+def test_valid_example_raises_no_diligence_warning(profile):
+    """新規則不得誤傷正確的用法。"""
+    assert warnings_for(profile) == []
+
+
+def test_missing_note_warns(profile):
+    profile["note"] = None
+    assert any("note 未填" in w for w in warnings_for(profile))
+
+
+def test_photos_without_note_mention_warns(profile, photo_file):
+    profile["photos"] = [{"path": str(photo_file), "caption": "系所網頁"}]
+    profile["note"] = "資料彙整自公開網路資訊。"
+    assert any("未提及照片" in w for w in warnings_for(profile))
+
+
+def test_photos_mentioned_in_note_is_clean(profile, photo_file):
+    profile["photos"] = [{"path": str(photo_file), "caption": "系所網頁"}]
+    profile["note"] = "照片取自系所網頁，非官方授權提供，解析度較低。"
+    assert not any("未提及照片" in w for w in warnings_for(profile))
+
+
+def test_photo_source_url_not_in_sources_warns(profile, photo_file):
+    profile["photos"] = [{
+        "path": str(photo_file),
+        "caption": "系所網頁",
+        "source_url": "https://example.edu/photo.jpg",
+    }]
+    profile["note"] = "照片取自系所網頁，非官方。"
+    assert any("source_url 未列入 sources" in w for w in warnings_for(profile))
+
+
+def test_photo_source_url_listed_in_sources_is_clean(profile, photo_file):
+    url = "https://example.edu/photo.jpg"
+    profile["photos"] = [{"path": str(photo_file), "caption": "系所網頁",
+                          "source_url": url}]
+    profile["note"] = "照片取自系所網頁，非官方。"
+    profile["sources"].append({"title": "照片來源", "url": url})
+    assert not any("source_url" in w for w in warnings_for(profile))
+
+
+def test_sources_without_any_url_warns(profile):
+    """入口 A 的預設產物：滿足 minItems 1，但沒有任何可回溯的網址，
+    而 HTML 會因此整個不顯示頁尾。"""
+    profile["sources"] = [{"title": "原始來源檔案", "url": ""}]
+    assert any("沒有任何可用網址" in w for w in warnings_for(profile))
+
+
+def test_diligence_warnings_never_block_generation(profile):
+    """全部是 warning —— validate_or_exit 不得因此中止。"""
+    profile["note"] = None
+    profile["sources"] = [{"title": "原始來源檔案", "url": ""}]
+    assert validate_or_exit(profile) is profile
+
+
+def test_photo_caption_must_not_be_empty(profile, photo_file):
+    """caption 原本是 schema 裡唯一沒有 minLength 的必填字串；空字串會在
+    縮圖下方留下一塊沒有說明的照片。"""
+    profile["photos"] = [{"path": str(photo_file), "caption": ""}]
+    assert errors_for(profile)
+
+
 def test_missing_jsonschema_only_warns(profile, monkeypatch):
     """Without jsonschema the validator degrades to built-in rules and says so
     — it must not start failing valid files."""
