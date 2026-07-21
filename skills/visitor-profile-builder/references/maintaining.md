@@ -63,6 +63,15 @@ family name `fonts-noto-cjk` actually registers — `"Noto Sans TC"` alone
 does not match it) in the stack, and the apt line in README. If you touch
 `font-family`, keep a Linux-installable CJK family in it.
 
+## Verifying the Linux path at all
+
+Everything in the two sections above fails only on Linux, so a Mac dev box
+proves nothing about it. `scripts/verify-on-ubuntu.sh` runs the whole chain
+on a real Ubuntu host and checks the arch-specific cache prefix, the font
+family, and the root/`--no-sandbox` case. Run it after touching
+`html_to_png.js` or the font stack — and look at the two PNGs it leaves in
+`~/vpb-verify-out/`, because a font failure exits 0 and prints nothing.
+
 ## Changing the field contract
 
 Edit `assets/profile.schema.json` — don't hardcode rules in Python. An 11th
