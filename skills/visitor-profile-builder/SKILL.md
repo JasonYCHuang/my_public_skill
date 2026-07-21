@@ -147,6 +147,13 @@ either is fine. Two things hold regardless: keep generated output out of
   wide table layout.
 - `html_to_png.js` needs Chrome/Chromium. If it can't find one, run
   `npx puppeteer browsers install chrome` (no root needed) and retry.
+- **On a headless Linux box, check for a CJK font before trusting a PNG.**
+  `fc-list :lang=zh | head -1` — if that's empty, run
+  `sudo apt install -y fonts-noto-cjk`. Without one, Chrome falls back to a
+  glyphless font and every Chinese character bakes into the image as a tofu
+  box, with no error. This is the single most likely way the "look at the
+  PNG" rule above catches something. Only the PNG is affected; the html and
+  xlsx use the reader's own fonts.
 - A PNG can be shown inline via a `MEDIA:<absolute path>` line on its own
   (Hermes/WeChat, Telegram, Discord, etc.). If it doesn't render first try,
   that's not proof the platform can't do it — retry as a standalone message

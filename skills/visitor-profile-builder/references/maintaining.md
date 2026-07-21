@@ -39,6 +39,30 @@ falls back to Puppeteer's own downloaded Chrome
 removed. The same fix lives in `calendar-manager/scripts/screenshot.js`;
 mirror changes to both.
 
+Two things in there are easy to break by "simplifying":
+
+- `CHROME_CACHE_PREFIX` keys off Puppeteer's own platform tag, not
+  `process.platform`. arm64 tags carry an underscore (`mac_arm`,
+  `linux_arm`) while x64 does not — and `"linux_arm-145..."` does **not**
+  start with `"linux-"`, so arm64 Linux needs its own entry. Collapsing the
+  two Linux rows breaks Graviton/Ampere boxes and nothing else, so it
+  survives every test run on x64.
+- The Linux launch flags apply to the **system-Chrome branch too**, not just
+  the fallback. Chrome refuses to start as root — the normal case in a
+  container — so a cloud box with apt-installed Chrome fails without
+  `--no-sandbox` even though a working Chrome is right there.
+
+## Fonts are baked into the PNG
+
+The HTML and xlsx render with the *reader's* fonts, so they are portable.
+The PNG is not: whatever font resolves at screenshot time is pixels forever.
+A clean Ubuntu server image ships no CJK font at all, and `sans-serif`
+resolves to DejaVu Sans, which has no CJK glyphs — every Chinese character
+becomes a tofu box, with no error anywhere. Hence `"Noto Sans CJK TC"` (the
+family name `fonts-noto-cjk` actually registers — `"Noto Sans TC"` alone
+does not match it) in the stack, and the apt line in README. If you touch
+`font-family`, keep a Linux-installable CJK family in it.
+
 ## Changing the field contract
 
 Edit `assets/profile.schema.json` — don't hardcode rules in Python. An 11th

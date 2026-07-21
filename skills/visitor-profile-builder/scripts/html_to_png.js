@@ -19,15 +19,17 @@ const os = require('os');
 const path = require('path');
 const puppeteer = require('puppeteer-core');
 
-// Puppeteer names its cache entries <platform>-<version>. The platform tag
-// is arch-specific: Apple Silicon is "mac_arm" (inner folder
-// chrome-mac-arm64), Intel Macs are "mac" (chrome-mac-x64). Keying off
-// process.platform alone silently misses every arm64 Mac.
+// Puppeteer names its cache entries <platform>-<version>, where <platform> is
+// its own BrowserPlatform enum, not process.platform: arm64 gets a separate
+// tag with an UNDERSCORE ("mac_arm", "linux_arm"), x64 does not. Keying off
+// process.platform alone silently misses every arm64 machine — and note
+// "linux_arm-145..." does not start with "linux-", so an arm64 Linux box
+// (Graviton, Ampere) needs its own entry rather than sharing the x64 one.
 const CHROME_CACHE_PREFIX = {
   'darwin-arm64': 'mac_arm-',
   'darwin-x64': 'mac-',
   'linux-x64': 'linux-',
-  'linux-arm64': 'linux-',
+  'linux-arm64': 'linux_arm-',
   'win32-x64': 'win64-',
 };
 
@@ -65,9 +67,26 @@ function findDownloadedChrome() {
   return null;
 }
 
+// Linux-only launch flags. Both are about headless servers, so they stay off
+// macOS (where Chrome's sandbox works fine and should keep working):
+//   --no-sandbox            Chrome refuses to start as root, which is the
+//                           normal case in a container or a bare cloud VM.
+//                           We only ever load file:// HTML this repo just
+//                           generated, so there is no untrusted content for
+//                           the sandbox to contain.
+//   --disable-dev-shm-usage Docker defaults /dev/shm to 64MB; Chrome writes
+//                           screenshots through it and crashes part-way on a
+//                           long card. Sends it to /tmp instead.
+const LINUX_ARGS = process.platform === 'linux'
+  ? ['--no-sandbox', '--disable-dev-shm-usage']
+  : [];
+
 async function launchBrowser(defaultViewport) {
   try {
-    return await puppeteer.launch({ channel: 'chrome', headless: 'new', defaultViewport });
+    // LINUX_ARGS applies here too, not just in the fallback: a cloud box with
+    // apt-installed Chrome takes this branch, and without --no-sandbox it
+    // died as root even though a perfectly good Chrome was present.
+    return await puppeteer.launch({ channel: 'chrome', headless: 'new', args: LINUX_ARGS, defaultViewport });
   } catch (err) {
     const executablePath = findDownloadedChrome();
     if (!executablePath) {
@@ -75,7 +94,7 @@ async function launchBrowser(defaultViewport) {
       throw err;
     }
     console.error('系統 Chrome 不可用，改用已下載的 Chrome:', executablePath);
-    return await puppeteer.launch({ executablePath, headless: 'new', args: ['--no-sandbox'], defaultViewport });
+    return await puppeteer.launch({ executablePath, headless: 'new', args: ['--no-sandbox', ...LINUX_ARGS], defaultViewport });
   }
 }
 

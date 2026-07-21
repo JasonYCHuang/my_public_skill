@@ -39,7 +39,13 @@ CSS = """
 *{box-sizing:border-box;}
 body{
   margin:0;
-  font-family:"PingFang TC","Microsoft JhengHei","Noto Sans TC",-apple-system,system-ui,sans-serif;
+  /* "Noto Sans CJK TC" is the family name Debian/Ubuntu's fonts-noto-cjk
+     package actually registers — "Noto Sans TC" is the webfont/variable
+     name and does NOT match it. Without this entry, a headless Linux box
+     falls through to sans-serif, which fontconfig resolves to DejaVu Sans,
+     which has no CJK glyphs: every Chinese character bakes into the PNG as
+     a tofu box. Silent, and only visible by looking at the image. */
+  font-family:"PingFang TC","Microsoft JhengHei","Noto Sans CJK TC","Noto Sans TC",-apple-system,system-ui,sans-serif;
   background:var(--page-bg);
   color:var(--ink);
   padding:20px 14px;

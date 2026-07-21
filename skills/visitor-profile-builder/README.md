@@ -88,6 +88,27 @@ Chrome（不需要管理員權限，會放在 `~/.cache/puppeteer/`）：
 npx puppeteer browsers install chrome
 ```
 
+#### 部署在雲端 Linux／Ubuntu 純 CLI 環境
+
+沒有桌面環境的機器要多做一件事，而且**是必要的、不是選用的**：
+
+```bash
+sudo apt install -y fonts-noto-cjk        # 中文字型
+npx puppeteer browsers install chrome     # 這種機器通常沒有系統 Chrome
+```
+
+**中文字型一定要裝。**乾淨的 Ubuntu server 映像檔完全不含中文字型，
+Chrome 會退回 DejaVu Sans——那套字型沒有任何中文字，於是 PNG 裡的每一個
+中文字都會變成一個空心方框（□□□）。麻煩的是這個過程不會報任何錯，
+檔案照樣產出，只是整張圖不能看。
+
+HTML 跟 xlsx 不受影響（它們是在收檔案的人電腦上顯示的，用的是那台的字型），
+**只有 PNG 會把字型烤進圖片裡**，所以只有 PNG 有這個問題。
+
+Docker／以 root 執行也可以，截圖程式在 Linux 上會自動加上必要的
+`--no-sandbox` 參數。產完 PNG 後請 agent 直接把圖顯示出來看一眼再收工——
+截圖出錯時通常不會報錯，只能用看的。
+
 ---
 
 ## 日常怎麼用
