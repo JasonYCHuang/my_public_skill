@@ -139,37 +139,25 @@ either is fine. Two things hold regardless: keep generated output out of
 - **This skill only produces html/xlsx/png — never wire iCloud/calendar
   writes into it.** Route "also add this to my calendar" to the sibling
   `calendar-manager` skill.
-- **Before committing changes under `assets/`**, confirm
-  `profile.example.json` is still fully fictional, still covers every field
-  (including the `"-"` ones, as a teaching example), and that any
-  sample photos are labeled stock/placeholder.
-- **`assets/profile.example.html` is generated, not written.** If you change
-  the example JSON or the HTML template, regenerate it in the same commit —
-  a stale sample is worse than none, because it teaches the wrong layout:
-  ```bash
-  python3 scripts/profile_json_to_html.py assets/profile.example.json -o assets/profile.example.html
-  ```
-  It is the one HTML file allowed to live in this folder, and only because
-  every value in it is fictional. Real profiles still never go here.
 
 ## Known issues
 
-- **The PNG is rendered phone-shaped on purpose** (430 CSS px wide, 3x), and
-  the HTML has a `@media (max-width:560px)` block that stacks the two tables
-  into per-row cards. The reason: these PNGs are read in a chat app on a
-  phone, where the image is scaled to screen width — a desktop-width render
-  arrives as unreadably small text, and a PNG can't be reflowed by the
-  reader. Widening the viewport in `html_to_png.js` silently undoes this.
-  Opening the .html in a desktop browser still gets the wide table layout.
-- `html_to_png.js` needs Chrome/Chromium. On headless/container Linux
-  without one it falls back to Puppeteer's own downloaded Chrome
-  (`npx puppeteer browsers install chrome`, no root) with `--no-sandbox`.
-  **Keep this fallback when editing the script** — it fails silently if
-  removed. The same fix lives in `calendar-manager/scripts/screenshot.js`;
-  mirror changes to both.
+- **The PNG is phone-shaped by design** (430 CSS px wide, 3x, tables stacked
+  into per-row cards) because it gets read in a chat app on a phone. That's
+  not a bug to fix — opening the .html in a desktop browser still gets the
+  wide table layout.
+- `html_to_png.js` needs Chrome/Chromium. If it can't find one, run
+  `npx puppeteer browsers install chrome` (no root needed) and retry.
 - A PNG can be shown inline via a `MEDIA:<absolute path>` line on its own
   (Hermes/WeChat, Telegram, Discord, etc.). If it doesn't render first try,
   that's not proof the platform can't do it — retry as a standalone message
   with only the `MEDIA:` line (no surrounding prose/tables), then a smaller
   resized PNG, then a regenerated PNG with a different aspect ratio, before
   concluding the path is broken.
+
+## Editing this skill
+
+If you're changing the package itself rather than building a profile —
+touching `assets/`, the HTML template, or `html_to_png.js` — read
+`references/maintaining.md` first. It covers the invariants that fail
+silently when broken.
