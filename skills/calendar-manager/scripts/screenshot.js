@@ -19,23 +19,50 @@ const os = require('os');
 const path = require('path');
 const puppeteer = require('puppeteer-core');
 
+// Puppeteer names its cache entries <platform>-<version>. The platform tag
+// is arch-specific: Apple Silicon is "mac_arm" (inner folder
+// chrome-mac-arm64), Intel Macs are "mac" (chrome-mac-x64). Keying off
+// process.platform alone silently misses every arm64 Mac.
+const CHROME_CACHE_PREFIX = {
+  'darwin-arm64': 'mac_arm-',
+  'darwin-x64': 'mac-',
+  'linux-x64': 'linux-',
+  'linux-arm64': 'linux-',
+  'win32-x64': 'win64-',
+};
+
+// Relative paths to the executable inside a cache entry, all platforms. We
+// probe rather than compute: cheaper than tracking Puppeteer's layout per
+// arch, and a renamed folder degrades to "not found" instead of a crash.
+const CHROME_EXE_LAYOUTS = [
+  ['chrome-mac-arm64', 'Google Chrome for Testing.app', 'Contents', 'MacOS', 'Google Chrome for Testing'],
+  ['chrome-mac-x64', 'Google Chrome for Testing.app', 'Contents', 'MacOS', 'Google Chrome for Testing'],
+  ['chrome-linux64', 'chrome'],
+  ['chrome-win64', 'chrome.exe'],
+];
+
 function findDownloadedChrome() {
   const cacheDir = process.env.PUPPETEER_CACHE_DIR || path.join(os.homedir(), '.cache', 'puppeteer');
   const chromeDir = path.join(cacheDir, 'chrome');
   if (!fs.existsSync(chromeDir)) return null;
 
-  const platformPrefix = { linux: 'linux-', darwin: 'mac-', win32: 'win64-' }[process.platform];
-  const entries = fs.readdirSync(chromeDir).filter((e) => platformPrefix && e.startsWith(platformPrefix)).sort();
-  if (entries.length === 0) return null;
-  const latest = entries[entries.length - 1];
+  const prefix = CHROME_CACHE_PREFIX[`${process.platform}-${process.arch}`];
+  if (!prefix) return null;
 
-  const candidates = {
-    linux: path.join(chromeDir, latest, 'chrome-linux64', 'chrome'),
-    darwin: path.join(chromeDir, latest, 'chrome-mac-x64', 'Google Chrome for Testing.app', 'Contents', 'MacOS', 'Google Chrome for Testing'),
-    win32: path.join(chromeDir, latest, 'chrome-win64', 'chrome.exe'),
-  }[process.platform];
+  // Numeric compare, else "chrome-99" sorts above "chrome-145".
+  const entries = fs
+    .readdirSync(chromeDir)
+    .filter((e) => e.startsWith(prefix))
+    .sort((a, b) => a.localeCompare(b, undefined, { numeric: true }))
+    .reverse();
 
-  return candidates && fs.existsSync(candidates) ? candidates : null;
+  for (const entry of entries) {
+    for (const layout of CHROME_EXE_LAYOUTS) {
+      const exe = path.join(chromeDir, entry, ...layout);
+      if (fs.existsSync(exe)) return exe;
+    }
+  }
+  return null;
 }
 
 async function launchBrowser(defaultViewport) {

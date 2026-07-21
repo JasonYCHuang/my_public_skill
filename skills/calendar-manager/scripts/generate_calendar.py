@@ -5,20 +5,34 @@ using the 模板_月曆.html / 模板_週曆.html templates in ../assets/. Backe
 agnostic -- works the same whether the events came from Google Calendar or
 iCloud (see SKILL.md "Choosing a backend").
 
-Input: a JSON file containing an `events` array shaped like Google
-Calendar's REST API (list of objects with summary/location/start/end
-fields, start/end as {"dateTime": "..."} or {"date": "..."} for all-day).
+Input: a JSON file whose *top level is the events array itself* -- not an
+object wrapping it, so `[{...}, {...}]` and not `{"events": [...]}`. Each
+entry is shaped like Google Calendar's REST API (summary/location/start/end
+fields, start/end as {"dateTime": "..."} or {"date": "..."} for all-day):
+
+    [
+      {"summary": "部門週會", "location": "台北",
+       "start": {"dateTime": "2026-08-03T09:00:00+08:00"},
+       "end":   {"dateTime": "2026-08-03T10:00:00+08:00"}},
+      {"summary": "教育訓練", "location": "台中",
+       "start": {"date": "2026-08-12"}, "end": {"date": "2026-08-13"}}
+    ]
+
 Google's `list_events` tool already returns this shape directly; for
 iCloud, `scripts/icloud/list_events.py --json` produces the same shape.
 Save that array to a file and point this script at it -- no transformation
 needed first.
 
-Usage:
+Usage (every flag below is required except --skip-weeks):
     python3 generate_calendar.py \
         --events events.json \
         --year 2026 --month 8 \
         --title "範例 2026 年 8 月行事曆" \
+        --name-prefix "26年8月" \
         --out-dir /path/to/output
+
+--title is the heading printed on the page; --name-prefix is the filename
+stem, so the example above writes 26年8月.html / 26年8月-第一週.html ...
 
 Output: <out-dir>/<YY年M月>.html plus one <YY年M月-第N週>.html per
 Monday-Sunday week needed to cover the month (see WEEK NUMBERING below).
