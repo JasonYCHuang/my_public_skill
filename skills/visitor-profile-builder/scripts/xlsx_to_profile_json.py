@@ -41,6 +41,10 @@ EMPTY = "-"  # the one sanctioned "no data" marker (see validate_profile.py)
 # Latin text, so a genuine Chinese aside like 王小明（範例）stays in `name`.
 NAME_EN_RE = re.compile(r"^(?P<zh>.+?)（(?P<en>[A-Za-z][A-Za-z0-9 .\-']*)）$")
 
+# Likewise, that script writes A1 as 資料彙整：{timestamp}. Strip the label back
+# off, or a json -> xlsx -> json round-trip accretes one copy of it per pass.
+TS_PREFIX = "資料彙整："
+
 
 def is_placeholder(v):
     return v is None or str(v).strip() in PLACEHOLDER_VALUES
@@ -53,6 +57,15 @@ def cell_value(v):
     contract allows exactly one, so collapse them all here rather than
     letting an em-dash from a 2019 spreadsheet fail validation downstream."""
     return EMPTY if is_placeholder(v) else str(v).strip()
+
+
+def strip_ts_label(raw):
+    """'資料彙整：2026/01/01' -> '2026/01/01'. Repeats are stripped too, so an
+    already-accreted file from before this fix reads back clean."""
+    s = str(raw or "").strip()
+    while s.startswith(TS_PREFIX):
+        s = s[len(TS_PREFIX):].strip()
+    return s
 
 
 def split_name(raw):
@@ -78,7 +91,7 @@ def extract(path):
     name, name_en = split_name(ws["B3"].value)
 
     data = {
-        "timestamp": ws["A1"].value or "",
+        "timestamp": strip_ts_label(ws["A1"].value),
         "name": name,
         "gender": cell_value(ws["D3"].value),
         "birth": cell_value(ws["B4"].value),

@@ -47,15 +47,15 @@
       "x-role": "field", "x-field-no": 4, "x-target": ["html", "xlsx"],
       "description": "[4] 生肖。無資料填 '-'"
     },
-    "contact": {
-      "type": "string", "minLength": 1,
-      "x-role": "field", "x-field-no": 5, "x-target": ["html", "xlsx"],
-      "description": "[5] 聯繫方式，多筆用 ／ 分隔。無資料填 '-'"
-    },
     "hometown": {
       "type": "string", "minLength": 1,
+      "x-role": "field", "x-field-no": 5, "x-target": ["html", "xlsx"],
+      "description": "[5] 籍貫。無資料填 '-'"
+    },
+    "contact": {
+      "type": "string", "minLength": 1,
       "x-role": "field", "x-field-no": 6, "x-target": ["html", "xlsx"],
-      "description": "[6] 籍貫。無資料填 '-'"
+      "description": "[6] 聯繫方式，多筆用 ／ 分隔。放在最後是因為它是唯一會長到佔滿一行的欄位。無資料填 '-'"
     },
     "education": {
       "type": "array",

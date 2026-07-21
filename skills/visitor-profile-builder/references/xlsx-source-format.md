@@ -21,7 +21,7 @@ coordinates rather than guessing.
 | `C3` | no | Label `性　　別` | `D3:E3` merged, value = gender |
 | `F3:F{N}` | yes | Vertical note/photo-caption column, spans rows 3 through the last row of the 教育經歷 section. Empty in one seed file, holds a short bracketed note (e.g. `（照片無官方披露）`) in the other. |
 | `A4` / `C4` | no | Labels `出生年月` / `生　　肖`; `B4` / `D4:E4` values |
-| `A5` / `C5` | no | Labels `聯繫方式` / `籍　　貫`; `B5` / `D5:E5` values |
+| `A5` / `C5` | no | Labels `聯繫方式` / `籍　　貫`; `B5` / `D5:E5` values. **Note the order is the reverse of the field contract** (which numbers 籍貫 [5] before 聯繫方式 [6]) — these cells match the original company template and are deliberately left alone; both scripts read/write by fixed coordinate, so swapping them would silently mis-read every existing file. |
 | `A6:A{N}` | yes | Section label `教育經歷`, rowspan = 1 header row + however many education rows exist (seed files use 2; not fixed) |
 | `B6..E6` | no | Column headers `畢業院校` / `專業` / `學歷` / `學位` |
 | `B{r}..E{r}` | no | One row per degree; unused rows filled with `-` placeholders in the seed files |
@@ -32,6 +32,11 @@ coordinates rather than guessing.
 | `B{r}` / `C{r}:E{r}` / `F{r}` | no / yes / no | One row per career entry |
 | `G5:M{P}` | yes | Large photo/notes placeholder (bottom), spans rows 5 through the last row of 主要履歷. Separate merge from `G2:M3` — there's a visible gap at row 4 between the two blocks (row 4's G–M cells are individual, unmerged, empty cells). |
 | `A{P+1}:F{P+1}` | yes | Optional trailing note row, only present in one of the two seed files — a short `注：...` sentence explaining data gaps (see `note-writing-guide.md` for how to phrase this). |
+
+Row counts vary per file, but not without limit: the field contract caps
+教育經歷 at 5 rows, 現任職位 at 3, 主要履歷 at 10 (and photos at 2). A source
+xlsx that exceeds any of those will be read in fine but will fail validation
+on the way back out — see `field-contract.md`.
 
 `N`, `M`, `P` are computed dynamically in both directions — `xlsx_to_profile_json.py`
 finds each section's row range by scanning `ws.merged_cells.ranges` for a

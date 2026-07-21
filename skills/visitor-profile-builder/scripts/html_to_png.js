@@ -97,7 +97,15 @@ async function main() {
     process.exit(1);
   }
 
-  const browser = await launchBrowser({ width: 900, height: 1000, deviceScaleFactor: 2 });
+  // Phone-shaped on purpose. These PNGs are read on a phone, in a chat app,
+  // where the image is scaled to the screen width — so rendering at roughly
+  // a phone's own CSS width is what makes the text land at natural reading
+  // size instead of pinch-zoom size. 3x keeps it sharp on a retina screen.
+  //
+  // Height is deliberately short: a fullPage screenshot is never smaller
+  // than the viewport, so a tall one pads short cards with dead background.
+  // fullPage still grows to fit the whole card.
+  const browser = await launchBrowser({ width: 430, height: 400, deviceScaleFactor: 3 });
   const page = await browser.newPage();
 
   for (const f of files) {

@@ -1,27 +1,6 @@
-#!/usr/bin/env python3
-"""
-Render a profile.json (see assets/profile.schema.json) into the standalone
-card-style HTML profile used throughout this skill.
+<title>王小明　個人檔案</title>
+<style>
 
-Usage:
-    python3 profile_json_to_html.py <profile.json> -o <output.html>
-
-Photos: each entry in profile["photos"] must have a local "path" that
-exists on disk (download it first, e.g. with curl -A "<browser UA>" -e
-"<referer>" -- many .edu.tw / institutional sites 403 a bare curl without
-a browser User-Agent and Referer header). This script inlines each photo
-as a base64 data: URI, so the output HTML is a single self-contained file.
-"""
-import argparse
-import base64
-import html as html_escape
-import json
-import mimetypes
-import os
-
-from validate_profile import validate_or_exit
-
-CSS = """
 :root{
   --page-bg:#eef1f5;
   --card-bg:#ffffff;
@@ -219,179 +198,44 @@ th.col-narrow,td.col-narrow{white-space:nowrap;width:1%;}
   table.data-table td.cell-lead::before{content:none;}
   table.data-table td.col-date{color:var(--ink-soft);}
 }
-"""
 
-PHOTO_ICON = (
-    '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">'
-    '<circle cx="12" cy="8" r="3.4"/><path d="M4.5 20c1.6-4 4.2-6 7.5-6s5.9 2 7.5 6"/></svg>'
-)
-
-# The one sanctioned "no data" marker; validate_profile.py rejects every
-# other spelling, so anything falsy here can only be a missing key.
-EMPTY = "-"
-
-PLACEHOLDER_VALUES = {None, "", "-", "－", "—"}
-
-
-def esc(v):
-    return html_escape.escape("" if v is None else str(v)).replace("\n", "<br>")
-
-
-def is_placeholder(v):
-    return v is None or str(v).strip() in PLACEHOLDER_VALUES
-
-
-def build_photo_block(photos):
-    if not photos:
-        return f"""
-      <div class="photo-placeholder">
-        {PHOTO_ICON}
-        <span>無官方照片</span>
-      </div>"""
-    cards = []
-    for p in photos:
-        with open(p["path"], "rb") as f:
-            b64 = base64.b64encode(f.read()).decode()
-        mime = mimetypes.guess_type(p["path"])[0] or "image/jpeg"
-        cards.append(
-            f'<div class="photo-card"><img src="data:{mime};base64,{b64}" '
-            f'alt="{esc(p["caption"])}"><span>{esc(p["caption"])}</span></div>'
-        )
-    return f'\n      <div class="photo-gallery">{"".join(cards)}</div>'
-
-
-def render(data):
-    # Fields [2]-[6] always render, "-" included: the record is a fixed form,
-    # so a reader must be able to see that a field was considered and left
-    # blank, not wonder whether it was omitted.
-    badges = []
-    # Contract order, fields [2]..[6]. 聯繫方式 is last by design: it holds
-    # the one value that runs long (an email), so trailing it lets that pill
-    # take a line of its own instead of shoving 籍貫 onto the next row.
-    # The xlsx keeps the old cell positions on purpose — see
-    # references/field-contract.md.
-    for key, label in (("gender", "性別"), ("birth", "出生年月"), ("zodiac", "生肖"), ("hometown", "籍貫"), ("contact", "聯繫方式")):
-        v = data.get(key) or EMPTY
-        badges.append(f'<span class="badge"><span class="k">{label}</span>{esc(v)}</span>')
-
-    eng_name = f'<p class="eng-name">{esc(data["name_en"])}</p>' if data.get("name_en") else ""
-
-    # 現任職位 lives inside the header rather than in its own section, so the
-    # photo column has something to stand next to and can be sized to the
-    # full height of the two together. It also removes a duplication: the
-    # header used to repeat positions[0] as a subtitle directly above this
-    # very list.
-    positions = data.get("positions") or []
-    items = "".join(f"<li>{esc(p)}</li>" for p in positions) or f"<li>{EMPTY}</li>"
-    position_block = (
-        f'<div class="header-positions">'
-        f'<h2 class="section-title">現任職位</h2>'
-        f'<ul class="position-list">{items}</ul></div>'
-    )
-
-    sections = []
-
-    edu_rows = data.get("education") or []
-    if edu_rows:
-        edu_body = "".join(
-            f'<tr><td class="cell-lead" data-label="畢業院校">{esc(e.get("school"))}</td>'
-            f'<td data-label="專業">{esc(e.get("major"))}</td>'
-            f'<td class="col-narrow" data-label="學歷">{esc(e.get("degree_level"))}</td>'
-            f'<td data-label="學位">{esc(e.get("degree"))}</td></tr>'
-            for e in edu_rows
-        )
-    else:
-        edu_body = (
-            f'<tr><td class="cell-lead" data-label="畢業院校">{EMPTY}</td><td data-label="專業">{EMPTY}</td>'
-            f'<td data-label="學歷">{EMPTY}</td><td data-label="學位">{EMPTY}</td></tr>'
-        )
-    sections.append(f'''
-    <div class="section">
-      <h2 class="section-title">教育經歷</h2>
-      <table class="data-table">
-        <thead><tr><th>畢業院校</th><th>專業</th><th class="col-narrow">學歷</th><th>學位</th></tr></thead>
-        <tbody>{edu_body}</tbody>
-      </table>
-    </div>''')
-
-    career_rows = data.get("career") or []
-    if career_rows:
-        career_body = "".join(
-            f'<tr><td class="col-date" data-label="起止年月">{esc(c.get("date"))}</td>'
-            f'<td class="cell-lead" data-label="工作單位">{esc(c.get("org"))}</td>'
-            f'<td data-label="職位">{esc(c.get("role"))}</td></tr>'
-            for c in career_rows
-        )
-    else:
-        career_body = (
-            f'<tr><td class="col-date" data-label="起止年月">{EMPTY}</td>'
-            f'<td class="cell-lead" data-label="工作單位">{EMPTY}</td><td data-label="職位">{EMPTY}</td></tr>'
-        )
-    sections.append(f'''
-    <div class="section">
-      <h2 class="section-title">主要履歷</h2>
-      <table class="data-table">
-        <thead><tr><th>起止年月</th><th>工作單位</th><th>職位</th></tr></thead>
-        <tbody>{career_body}</tbody>
-      </table>
-    </div>''')
-
-    note_html = f'<div class="note-callout">※ {esc(data["note"])}</div>' if data.get("note") else ""
-
-    sources = data.get("sources") or []
-    src_items = "".join(
-        f'<li><a href="{html_escape.escape(s["url"])}" target="_blank" rel="noopener">{esc(s["title"])}</a></li>'
-        for s in sources if s.get("url")
-    )
-    src_block = f'<div class="src-title">資料來源</div>\n      <ol>{src_items}</ol>' if src_items else ""
-
-    photo_block = build_photo_block(data.get("photos") or [])
-    timestamp = data.get("timestamp") or ""
-
-    return f"""<title>{esc(data.get("name", ""))}　個人檔案</title>
-<style>
-{CSS}
 </style>
 <div class="page">
   <div class="card">
     <div class="card-header">
       <div class="identity">
-        <h1>{esc(data.get("name", ""))}</h1>
-        {eng_name}
-        <div class="badge-row">{"".join(badges)}</div>
-        {position_block}
+        <h1>王小明</h1>
+        <p class="eng-name">Wang Xiaoming</p>
+        <div class="badge-row"><span class="badge"><span class="k">性別</span>男（範例值）</span><span class="badge"><span class="k">出生年月</span>-</span><span class="badge"><span class="k">生肖</span>-</span><span class="badge"><span class="k">籍貫</span>-</span><span class="badge"><span class="k">聯繫方式</span>example@demo-university.edu</span></div>
+        <div class="header-positions"><h2 class="section-title">現任職位</h2><ul class="position-list"><li>示範大學資訊工程學系　特聘教授</li><li>示範大學資訊系統與應用研究所　所長</li><li>示範實驗室（Demo Systems Lab）　主持人</li></ul></div>
       </div>
       <div class="header-right">
-        <span class="updated-tag"><span class="ts-label">資料彙整時間：</span>{esc(timestamp)}</span>{photo_block}
+        <span class="updated-tag"><span class="ts-label">資料彙整時間：</span>2026/01/01</span>
+      <div class="photo-placeholder">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="12" cy="8" r="3.4"/><path d="M4.5 20c1.6-4 4.2-6 7.5-6s5.9 2 7.5 6"/></svg>
+        <span>無官方照片</span>
+      </div>
       </div>
     </div>
-{"".join(sections)}
-    {note_html}
+
+    <div class="section">
+      <h2 class="section-title">教育經歷</h2>
+      <table class="data-table">
+        <thead><tr><th>畢業院校</th><th>專業</th><th class="col-narrow">學歷</th><th>學位</th></tr></thead>
+        <tbody><tr><td class="cell-lead" data-label="畢業院校">示範大學</td><td data-label="專業">資訊工程學系</td><td class="col-narrow" data-label="學歷">學士</td><td data-label="學位">範例年份畢業</td></tr><tr><td class="cell-lead" data-label="畢業院校">示範大學</td><td data-label="專業">資訊工程學系</td><td class="col-narrow" data-label="學歷">碩士</td><td data-label="學位">範例年份畢業</td></tr><tr><td class="cell-lead" data-label="畢業院校">海外示範大學（Demo Institute of Technology）</td><td data-label="專業">電腦科學系</td><td class="col-narrow" data-label="學歷">博士</td><td data-label="學位">範例年份（指導教授：範例姓名）</td></tr></tbody>
+      </table>
+    </div>
+    <div class="section">
+      <h2 class="section-title">主要履歷</h2>
+      <table class="data-table">
+        <thead><tr><th>起止年月</th><th>工作單位</th><th>職位</th></tr></thead>
+        <tbody><tr><td class="col-date" data-label="起止年月">範例年份起</td><td class="cell-lead" data-label="工作單位">海外示範研究機構</td><td data-label="職位">博士後研究員</td></tr><tr><td class="col-date" data-label="起止年月">範例年份起</td><td class="cell-lead" data-label="工作單位">示範大學資訊工程學系</td><td data-label="職位">助理教授</td></tr><tr><td class="col-date" data-label="起止年月">範例年份起</td><td class="cell-lead" data-label="工作單位">示範大學資訊工程學系</td><td data-label="職位">副教授</td></tr><tr><td class="col-date" data-label="起止年月">範例年份起</td><td class="cell-lead" data-label="工作單位">示範大學資訊工程學系</td><td data-label="職位">教授</td></tr><tr><td class="col-date" data-label="起止年月">現任</td><td class="cell-lead" data-label="工作單位">示範大學資訊系統與應用研究所</td><td data-label="職位">所長</td></tr></tbody>
+      </table>
+    </div>
+    <div class="note-callout">※ 本檔案為 profile.json 欄位示範，所有姓名、單位、年份、連結、照片均為虛構占位資料。實際使用時請依真實查證結果填寫，並在此欄位誠實註明：資料來源類別、哪些內容是推估而非確認、以及照片是否為非官方來源，參見 references/note-writing-guide.md。查無資料的欄位一律填 &quot;-&quot;，不要用「未知」「不詳」等其他寫法，也不要留空。</div>
     <div class="card-footer">
-      {src_block}
+      <div class="src-title">資料來源</div>
+      <ol><li><a href="https://example.edu/faculty/demo-professor" target="_blank" rel="noopener">範例來源一：所屬單位教師頁面</a></li><li><a href="https://example.org/profile/demo-professor" target="_blank" rel="noopener">範例來源二：學術資料庫個人頁面</a></li></ol>
     </div>
   </div>
 </div>
-"""
-
-
-def main():
-    ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("profile_json", help="輸入 profile.json 路徑")
-    ap.add_argument("-o", "--output", required=True, help="輸出 html 路徑")
-    args = ap.parse_args()
-
-    with open(args.profile_json, "r", encoding="utf-8") as f:
-        data = json.load(f)
-
-    validate_or_exit(data, target="html")
-
-    html_out = render(data)
-    os.makedirs(os.path.dirname(os.path.abspath(args.output)), exist_ok=True)
-    with open(args.output, "w", encoding="utf-8") as f:
-        f.write(html_out)
-    print(f"wrote {args.output}")
-
-
-if __name__ == "__main__":
-    main()
