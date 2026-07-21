@@ -230,26 +230,30 @@ PHOTO_ICON = (
 # other spelling, so anything falsy here can only be a missing key.
 EMPTY = "-"
 
-PLACEHOLDER_VALUES = {None, "", "-", "－", "—"}
-
-
 def esc(v):
     return html_escape.escape("" if v is None else str(v)).replace("\n", "<br>")
 
 
-def is_placeholder(v):
-    return v is None or str(v).strip() in PLACEHOLDER_VALUES
-
-
-def build_photo_block(photos):
-    if not photos:
-        return f"""
+def _placeholder_block():
+    return f"""
       <div class="photo-placeholder">
         {PHOTO_ICON}
         <span>無官方照片</span>
       </div>"""
+
+
+def build_photo_block(photos):
+    if not photos:
+        return _placeholder_block()
     cards = []
     for p in photos:
+        # Match profile_json_to_xlsx.py: a photo path that no longer exists
+        # warns and is skipped, rather than aborting the whole render. The two
+        # generators run back-to-back on one profile.json, so diverging here
+        # meant the xlsx built fine and the html died on the same input.
+        if not os.path.exists(p["path"]):
+            print(f'警告：找不到照片檔案 {p["path"]}，略過')
+            continue
         with open(p["path"], "rb") as f:
             b64 = base64.b64encode(f.read()).decode()
         mime = mimetypes.guess_type(p["path"])[0] or "image/jpeg"
@@ -257,6 +261,8 @@ def build_photo_block(photos):
             f'<div class="photo-card"><img src="data:{mime};base64,{b64}" '
             f'alt="{esc(p["caption"])}"><span>{esc(p["caption"])}</span></div>'
         )
+    if not cards:
+        return _placeholder_block()
     return f'\n      <div class="photo-gallery">{"".join(cards)}</div>'
 
 
@@ -343,12 +349,28 @@ def render(data):
         f'<li><a href="{html_escape.escape(s["url"])}" target="_blank" rel="noopener">{esc(s["title"])}</a></li>'
         for s in sources if s.get("url")
     )
+    # Entry point A seeds sources with {"title": "原始來源檔案", "url": ""},
+    # and url-less entries are dropped from the list — which left the footer
+    # as an empty grey bar on every xlsx-derived card. Drop the whole footer
+    # when nothing survives the filter.
     src_block = f'<div class="src-title">資料來源</div>\n      <ol>{src_items}</ol>' if src_items else ""
+    footer_html = f'\n    <div class="card-footer">\n      {src_block}\n    </div>' if src_block else ""
 
     photo_block = build_photo_block(data.get("photos") or [])
     timestamp = data.get("timestamp") or ""
 
-    return f"""<title>{esc(data.get("name", ""))}　個人檔案</title>
+    # charset: the file is written UTF-8 and is full of Chinese. Opened from
+    # file:// (or forwarded as an attachment) with no declaration, a browser
+    # falls back to a locale default and can render the whole card as mojibake.
+    # viewport: without it a phone browser assumes a ~980px virtual viewport,
+    # so the max-width:560px phone layout below never fires and a colleague
+    # opening the forwarded .html on their phone gets the squeezed desktop
+    # tables. The PNG path is unaffected either way — html_to_png.js sets the
+    # viewport explicitly — but the .html is meant to be opened directly too.
+    return f"""<!DOCTYPE html>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{esc(data.get("name", ""))}　個人檔案</title>
 <style>
 {CSS}
 </style>
@@ -366,10 +388,7 @@ def render(data):
       </div>
     </div>
 {"".join(sections)}
-    {note_html}
-    <div class="card-footer">
-      {src_block}
-    </div>
+    {note_html}{footer_html}
   </div>
 </div>
 """
