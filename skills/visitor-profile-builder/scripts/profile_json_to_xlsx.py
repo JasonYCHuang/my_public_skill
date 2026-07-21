@@ -172,7 +172,7 @@ def build(data):
             print("警告：找不到 Pillow，略過照片嵌入（pip install Pillow 後重跑即可加入照片）")
             photos = []
         anchors = ["G2", "G6"]
-        caption_cells = [f"G4", f"G{note_row}"]
+        caption_cells = ["G4", f"G{note_row}"]
         for i, p in enumerate(photos[:2]):
             if not os.path.exists(p["path"]):
                 print(f"警告：找不到照片檔案 {p['path']}，略過")

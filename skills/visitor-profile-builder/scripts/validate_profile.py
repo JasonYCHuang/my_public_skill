@@ -16,16 +16,17 @@ Two severities, deliberately:
   warnings -- editorial: the output is valid but unusually long, or carries
               data the chosen format will silently drop. Generation continues.
 
-Where a ceiling was given as a hard requirement (positions ≤3, career ≤10)
-it is an error. Where it is only an editorial preference (education) it is a
-warning — a real person can legitimately have more degrees than expected,
-and hard-failing that would push people to edit the schema or drop true data.
+All four count ceilings (education ≤5, positions ≤3, career ≤10, photos ≤2)
+are spec numbers, so all four are errors. The x-soft-max mechanism below is
+retained but currently unused — see references/field-contract.md.
 
 Usage:
     python3 validate_profile.py <profile.json> [--target html|xlsx] [--strict]
 
-    --target   also report fields that the given output format drops
-               (x-target in the schema)
+    --target   reserved: reports fields the given format would drop. Both
+               formats currently carry all 10 fields, so this never fires;
+               the x-target annotations are kept as documentation for a
+               future case where the two outputs diverge again.
     --strict   treat warnings as errors (exit 1)
 """
 import argparse
@@ -129,7 +130,9 @@ def validate(data, target=None):
                 "版面會偏長，確認是否精簡。"
             )
 
-    # 4. Fields the chosen output format will silently drop.
+    # 4. Fields the chosen output format would silently drop. Since the
+    #    2026-07 unification both formats carry all 10 fields, so this can
+    #    only fire if someone adds a field targeting just one output.
     if target:
         dropped = [
             f for f, spec in props.items()
@@ -141,7 +144,7 @@ def validate(data, target=None):
         if dropped:
             warnings.append(
                 f"以下欄位有資料但不會出現在 {target}：{', '.join(dropped)}。"
-                "這是版型設計如此，非錯誤（見 references/note-writing-guide.md）。"
+                "若非刻意設計，檢查該欄位的 x-target 標註。"
             )
 
     return errors, warnings

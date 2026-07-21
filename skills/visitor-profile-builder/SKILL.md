@@ -87,14 +87,14 @@ The more common case. Steps:
    - **`sources` is not optional.** List every URL you actually pulled a
      fact from; a reviewer may need to verify any single line.
    - **The record is a closed set of 10 fields** — 姓名／性別／出生年月／
-     生肖／籍貫／聯繫方式／教育經歷／現任職位（≤3）／主要經歷（≤10）／照片
+     生肖／籍貫／聯繫方式／教育經歷／現任職位（≤3）／主要履歷（≤10）／照片
      （≤2）. All ten are required, and any key outside the schema is an
      error. `timestamp`/`note`/`sources` are header/footer metadata, not
      fields. Full table and rationale: `references/field-contract.md`.
    - Both generators validate before writing anything and abort on error,
      so read their output. To check a JSON without generating:
      ```bash
-     python3 scripts/validate_profile.py profile.json --target xlsx
+     python3 scripts/validate_profile.py profile.json
      ```
 3. **Find and attach a photo — by default, not only when asked.** Read
    `references/photo-sourcing.md` before doing this; it covers finding

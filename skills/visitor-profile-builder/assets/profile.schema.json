@@ -85,7 +85,7 @@
       "type": "array",
       "maxItems": 10,
       "x-role": "field", "x-field-no": 9, "x-target": ["html", "xlsx"],
-      "description": "[9] 主要經歷，硬上限 10 筆。每列三格，缺哪格就填 '-'",
+      "description": "[9] 主要履歷，硬上限 10 筆。每列三格，缺哪格就填 '-'",
       "items": {
         "type": "object",
         "additionalProperties": false,

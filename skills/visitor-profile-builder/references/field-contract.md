@@ -18,7 +18,7 @@
 | 6 | 聯繫方式 | `contact` | 必填 |
 | 7 | 教育經歷 | `education` | 每列含畢業院校／專業／學歷／學位，四格皆必填；**最多 5 列** |
 | 8 | 現任職位 | `positions` | **最多 3 個** |
-| 9 | 主要經歷 | `career` | 每列含起止年月／工作單位／職位；**最多 10 筆** |
+| 9 | 主要履歷 | `career` | 每列含起止年月／工作單位／職位；**最多 10 筆** |
 | 10 | 照片 | `photos` | 0～2 張 |
 
 **上面的編號規範的是這份表單的欄位次序，不等同 xlsx 的物理排版。**xlsx 沿用
@@ -76,9 +76,12 @@
 ## 手動驗證
 
 ```bash
-python3 scripts/validate_profile.py profile.json --target xlsx
+python3 scripts/validate_profile.py profile.json
 python3 scripts/validate_profile.py profile.json --strict   # 警告也視為失敗
 ```
+
+（還有一個 `--target html|xlsx` 旗標，但兩種格式目前都輸出全部 10 欄位，
+所以它不會有任何輸出；保留是為了將來兩邊版型再度分歧時可用。）
 
 ## 要修改限制時
 
