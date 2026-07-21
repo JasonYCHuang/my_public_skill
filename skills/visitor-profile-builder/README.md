@@ -47,15 +47,15 @@ HTML 網頁跟 xlsx 檔案。好處：
 跟你的 agent 說一聲，或自己在終端機跑：
 
 ```bash
-pip install openpyxl jsonschema Pillow
+python3 -m pip install openpyxl jsonschema Pillow
 ```
+
+（刻意寫成 `python3 -m pip` 而不是 `pip`：很多人電腦上的 `pip` 跟 `python3`
+指向不同的 Python——例如一個是 miniconda、一個是 Homebrew——那會裝進一個
+執行程式時根本不會用到的環境，症狀是「裝好了卻說找不到套件」。）
 
 （`Pillow` 只有在要把照片嵌進 xlsx 檔時才需要，沒有照片可以省略；
 `jsonschema` 用來檢查資料格式，建議裝，缺了會跳過部分檢查。）
-
-**如果 `pip` 裝完卻說找不到套件**，代表你電腦上的 `pip` 跟 `python3` 指向
-不同的 Python（很常見，例如一個是 miniconda、一個是 Homebrew）。
-用 `python3 -m pip install ...` 就能確保裝到正確的那一個。
 
 如果你的電腦跳出「externally-managed-environment」之類的錯誤（macOS 用
 Homebrew 裝的 Python 很常見），不要硬裝，改建一個一次性的虛擬環境就好，
@@ -69,21 +69,24 @@ python3 -m venv /tmp/vpb-venv && /tmp/vpb-venv/bin/pip install openpyxl jsonsche
 
 ### 第三步（選用）：只有需要 PNG 圖檔才要做
 
-在 `visitor-profile-builder/scripts/` 資料夾裡跑一次（只需一次）：
+這步需要電腦上有 **Node.js**（HTML 跟 xlsx 都不需要，只有截圖用得到）。
+沒裝過的話先去 [nodejs.org](https://nodejs.org) 裝一份，或用 `brew install node`；
+已經有的話 `node -v` 會印出版本號。
+
+然後在 `visitor-profile-builder/scripts/` 資料夾裡跑一次（只需一次）：
 
 ```bash
 npm install
 ```
 
-這會裝好 `puppeteer-core`。截圖程式會**先試著用你電腦上已經裝好的 Chrome**；
-如果沒有 Chrome（例如在沒有桌面環境的 Linux 主機上），再跑一次這行讓它自己
-下載一份專用的 Chrome（不需要管理員權限，會放在 `~/.cache/puppeteer/`）：
+這會裝好 `puppeteer-core`。截圖程式會**先試著用你電腦上已經裝好的 Chrome**，
+所以大部分情況下你不需要另外裝瀏覽器。只有在真的沒有 Chrome 時（例如在沒有
+桌面環境的 Linux 主機上），才需要多跑下面這行，讓它自己下載一份專用的
+Chrome（不需要管理員權限，會放在 `~/.cache/puppeteer/`）：
 
 ```bash
 npx puppeteer browsers install chrome
 ```
-
-所以大部分情況下，你不需要另外手動安裝瀏覽器。
 
 ---
 
@@ -146,7 +149,10 @@ agent 會把 HTML 網頁截圖成一張完整的 PNG 圖片，跟 HTML 長得一
   規格（例如教育經歷最多 5 列、現任職位最多 3 個、主要履歷最多 10 筆、
   照片最多 2 張、資料來源至少 1 筆），
   違反時會擋下來而不是產出一份版面壞掉的檔案。直接請 agent 依訊息修正即可。
-  出現 ⚠️ 警告則不影響產檔，只是提醒內容偏長或某些欄位不會出現在 xlsx。
+- **看到 ⚠️「jsonschema 未安裝，已跳過 schema 結構驗證」**：檔案還是會照常
+  產出，但只跑了內建的基本檢查，欄位數量上限、型別這些沒有被驗到。
+  照上面第二步把 `jsonschema` 裝起來就會消失。這是實務上最常見的一則警告，
+  因為 macOS 內建的 python3 通常沒有它。
 - **有些欄位寫「-」**：代表 agent 查不到這項資料。這是刻意的設計——寧可
   誠實留空，也不會用猜的填進去。個人檔案固定就是這 10 個欄位（姓名、性別、
   出生年月、生肖、籍貫、聯繫方式、教育經歷、現任職位、主要履歷、照片），
