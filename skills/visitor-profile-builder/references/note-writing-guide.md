@@ -1,4 +1,4 @@
-# Writing the `note` field, and why xlsx/HTML fields diverge
+# Writing the `note` field
 
 ## The `note` field is not decoration
 
@@ -22,29 +22,9 @@ Don't write a vague "資料僅供參考" and stop there — that tells the reade
 nothing they can act on. The bar: could someone who only reads `note` know
 which specific fields to double-check before relying on this document?
 
-## The xlsx and the HTML now carry the same fields
-
-Both formats render the same closed set of 10 fields — see
-`field-contract.md`. The HTML card used to carry extra academic sections
-(research areas, publications, citation metrics); those were removed in
-2026-07 when the record was standardised, and `profile_json_to_html.py` no
-longer has code for them.
-
-So there is no longer a "which format drops what" question to reason about.
-If a future case genuinely needs an 11th field, that's a deliberate change
-to `assets/profile.schema.json` plus both generators plus
-`references/xlsx-source-format.md` — not something to bolt onto an
-unrelated cell.
-
 ## Placeholder discipline
 
-Never write a guessed value into a field you can't verify. Write a literal
-half-width `-` instead, which is the one sanctioned "no data" marker — the
-same convention the original seed dossiers used. `validate_profile.py`
-rejects every other spelling (`不詳（未公開）`, `未知`, `—`, `N/A`, blank,
-`null`), because the value of the convention is that anyone can grep a
-profile and count exactly how many fields came up empty.
-
-This is the same principle as "state your assumptions explicitly" from
-general coding guidelines, applied to biographical data instead of code: an
-explicit blank beats a plausible-looking fabrication.
+An explicit blank beats a plausible-looking fabrication — the same principle
+as "state your assumptions explicitly", applied to biographical data instead
+of code. Never write a guessed value into a field you can't verify; the `-`
+convention and what the validator rejects are in `field-contract.md`.

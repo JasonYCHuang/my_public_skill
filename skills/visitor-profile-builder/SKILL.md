@@ -79,9 +79,8 @@ The more common case. Steps:
 2. **Compile facts into `profile.json` by hand** (there's no scraper — read
    `assets/profile.schema.json` for the field list). Rules that matter:
    - **Any field you can't verify: a literal half-width `-`, never a
-     guess.** Every other spelling — `不詳（未公開）`, `未知`, `—`, `N/A`,
-     blank, `null` — is rejected by the validator, because the point is that
-     empty cells stay greppable.
+     guess.** Every other spelling is rejected by the validator — the
+     rejected list and the reasoning are in `references/field-contract.md`.
    - If a fact is *inferred* from a news article or talk transcript rather
      than stated outright, say so in `note` — see
      `references/note-writing-guide.md` for phrasing patterns.
