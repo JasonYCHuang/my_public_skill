@@ -25,6 +25,7 @@ reverse-engineered spec):
 """
 import argparse
 import json
+import re
 import sys
 
 try:
@@ -32,11 +33,35 @@ try:
 except ImportError:
     sys.exit("需要 openpyxl：pip install openpyxl")
 
-PLACEHOLDER_VALUES = {None, "", "-", "－", "—"}
+PLACEHOLDER_VALUES = {None, "", "-", "－", "—", "–"}
+EMPTY = "-"  # the one sanctioned "no data" marker (see validate_profile.py)
+
+# profile_json_to_xlsx.py packs name_en into B3 as 中文名（English）; undo that
+# here so the round-trip is lossless. Only splits when the parenthetical is
+# Latin text, so a genuine Chinese aside like 王小明（範例）stays in `name`.
+NAME_EN_RE = re.compile(r"^(?P<zh>.+?)（(?P<en>[A-Za-z][A-Za-z0-9 .\-']*)）$")
 
 
 def is_placeholder(v):
     return v is None or str(v).strip() in PLACEHOLDER_VALUES
+
+
+def cell_value(v):
+    """Normalise a cell to the contract: real text, or the literal "-".
+
+    The seed files use several spellings of "empty" (-, －, —, blank); the
+    contract allows exactly one, so collapse them all here rather than
+    letting an em-dash from a 2019 spreadsheet fail validation downstream."""
+    return EMPTY if is_placeholder(v) else str(v).strip()
+
+
+def split_name(raw):
+    """'王小明（Wang Xiaoming）' -> ('王小明', 'Wang Xiaoming')."""
+    raw = (raw or "").strip()
+    m = NAME_EN_RE.match(raw)
+    if m:
+        return m.group("zh").strip(), m.group("en").strip()
+    return raw, None
 
 
 def find_section_rows(ws, label):
@@ -50,14 +75,16 @@ def extract(path):
     wb = openpyxl.load_workbook(path, data_only=True)
     ws = wb.active
 
+    name, name_en = split_name(ws["B3"].value)
+
     data = {
         "timestamp": ws["A1"].value or "",
-        "name": ws["B3"].value or "",
-        "gender": None if is_placeholder(ws["D3"].value) else ws["D3"].value,
-        "birth": None if is_placeholder(ws["B4"].value) else ws["B4"].value,
-        "zodiac": None if is_placeholder(ws["D4"].value) else ws["D4"].value,
-        "contact": None if is_placeholder(ws["B5"].value) else ws["B5"].value,
-        "hometown": None if is_placeholder(ws["D5"].value) else ws["D5"].value,
+        "name": name,
+        "gender": cell_value(ws["D3"].value),
+        "birth": cell_value(ws["B4"].value),
+        "zodiac": cell_value(ws["D4"].value),
+        "contact": cell_value(ws["B5"].value),
+        "hometown": cell_value(ws["D5"].value),
         "education": [],
         "positions": [],
         "career": [],
@@ -72,9 +99,12 @@ def extract(path):
                 ws.cell(row=r, column=c).value for c in (2, 3, 4, 5)
             )
             if not all(is_placeholder(v) for v in (school, major, degree_level, degree)):
-                data["education"].append(
-                    {"school": school, "major": major, "degree_level": degree_level, "degree": degree}
-                )
+                data["education"].append({
+                    "school": cell_value(school),
+                    "major": cell_value(major),
+                    "degree_level": cell_value(degree_level),
+                    "degree": cell_value(degree),
+                })
 
     pos_range = find_section_rows(ws, "現任職位")
     if pos_range:
@@ -94,12 +124,19 @@ def extract(path):
                 ws.cell(row=r, column=6).value,
             )
             if not all(is_placeholder(v) for v in (date, org, role)):
-                data["career"].append({"date": date, "org": org, "role": role})
+                data["career"].append({
+                    "date": cell_value(date),
+                    "org": cell_value(org),
+                    "role": cell_value(role),
+                })
 
     for row in ws.iter_rows():
         for cell in row:
             if cell.column == 1 and isinstance(cell.value, str) and cell.value.startswith("注："):
                 data["note"] = cell.value[2:].strip()
+
+    if name_en:
+        data["name_en"] = name_en
 
     data["photos"] = []
     data["sources"] = [{"title": "原始來源檔案", "url": ""}]

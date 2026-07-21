@@ -19,6 +19,8 @@ import json
 import mimetypes
 import os
 
+from validate_profile import validate_or_exit
+
 CSS = """
 :root{
   --page-bg:#eef1f5;
@@ -152,6 +154,10 @@ PHOTO_ICON = (
     '<circle cx="12" cy="8" r="3.4"/><path d="M4.5 20c1.6-4 4.2-6 7.5-6s5.9 2 7.5 6"/></svg>'
 )
 
+# The one sanctioned "no data" marker; validate_profile.py rejects every
+# other spelling, so anything falsy here can only be a missing key.
+EMPTY = "-"
+
 PLACEHOLDER_VALUES = {None, "", "-", "－", "—"}
 
 
@@ -183,22 +189,23 @@ def build_photo_block(photos):
 
 
 def render(data):
+    # Fields [2]-[6] always render, "-" included: the record is a fixed form,
+    # so a reader must be able to see that a field was considered and left
+    # blank, not wonder whether it was omitted.
     badges = []
     for key, label in (("gender", "性別"), ("birth", "出生年月"), ("zodiac", "生肖"), ("hometown", "籍貫"), ("contact", "聯繫方式")):
-        v = data.get(key)
-        if not is_placeholder(v):
-            badges.append(f'<span class="badge"><span class="k">{label}</span>{esc(v)}</span>')
+        v = data.get(key) or EMPTY
+        badges.append(f'<span class="badge"><span class="k">{label}</span>{esc(v)}</span>')
 
     positions = data.get("positions") or []
-    subtitle_text = data.get("subtitle") or (positions[0] if positions else "")
+    subtitle_text = positions[0] if positions else ""
     subtitle = f'<p class="subtitle">{esc(subtitle_text)}</p>' if subtitle_text else ""
     eng_name = f'<p class="eng-name">{esc(data["name_en"])}</p>' if data.get("name_en") else ""
 
     sections = []
 
-    if positions:
-        items = "".join(f"<li>{esc(p)}</li>" for p in positions)
-        sections.append(f'\n    <div class="section">\n      <h2 class="section-title">現任職位</h2>\n      <ul class="position-list">{items}</ul>\n    </div>')
+    items = "".join(f"<li>{esc(p)}</li>" for p in positions) or f"<li>{EMPTY}</li>"
+    sections.append(f'\n    <div class="section">\n      <h2 class="section-title">現任職位</h2>\n      <ul class="position-list">{items}</ul>\n    </div>')
 
     edu_rows = data.get("education") or []
     if edu_rows:
@@ -208,7 +215,7 @@ def render(data):
             for e in edu_rows
         )
     else:
-        edu_body = '<tr><td class="empty-row" colspan="4">尚無官方公開資料</td></tr>'
+        edu_body = f'<tr>{"".join(f"<td>{EMPTY}</td>" for _ in range(4))}</tr>'
     sections.append(f'''
     <div class="section">
       <h2 class="section-title">教育經歷</h2>
@@ -225,7 +232,7 @@ def render(data):
             for c in career_rows
         )
     else:
-        career_body = '<tr><td class="empty-row" colspan="3">尚無官方公開資料</td></tr>'
+        career_body = f'<tr>{"".join(f"<td>{EMPTY}</td>" for _ in range(3))}</tr>'
     sections.append(f'''
     <div class="section">
       <h2 class="section-title">主要履歷</h2>
@@ -234,32 +241,6 @@ def render(data):
         <tbody>{career_body}</tbody>
       </table>
     </div>''')
-
-    if data.get("research_areas"):
-        pills = "".join(f'<span class="pill">{esc(a)}</span>' for a in data["research_areas"])
-        sections.append(f'\n    <div class="section">\n      <h2 class="section-title">研究領域</h2>\n      <div class="pill-wrap">{pills}</div>\n    </div>')
-
-    if data.get("metrics"):
-        tiles = "".join(f'<div class="stat-tile"><div class="num">{esc(m.get("num"))}</div><div class="lbl">{esc(m.get("label"))}</div></div>' for m in data["metrics"])
-        sections.append(f'\n    <div class="section">\n      <h2 class="section-title">學術／量化指標</h2>\n      <div class="stat-grid">{tiles}</div>\n    </div>')
-
-    if data.get("publications"):
-        pub_body = "".join(
-            f'<tr><td class="col-date">{esc(p.get("year"))}</td><td>{esc(p.get("title"))}</td><td class="col-num">{esc(p.get("citations"))}</td></tr>'
-            for p in data["publications"]
-        )
-        sections.append(f'''
-    <div class="section">
-      <h2 class="section-title">代表著作／案例</h2>
-      <table class="data-table">
-        <thead><tr><th>年份</th><th>標題</th><th>備註</th></tr></thead>
-        <tbody>{pub_body}</tbody>
-      </table>
-    </div>''')
-
-    if data.get("achievements"):
-        items = "".join(f"<li>{esc(a)}</li>" for a in data["achievements"])
-        sections.append(f'\n    <div class="section">\n      <h2 class="section-title">榮譽獎項與成就</h2>\n      <ul class="position-list">{items}</ul>\n    </div>')
 
     note_html = f'<div class="note-callout">※ {esc(data["note"])}</div>' if data.get("note") else ""
 
@@ -306,6 +287,8 @@ def main():
 
     with open(args.profile_json, "r", encoding="utf-8") as f:
         data = json.load(f)
+
+    validate_or_exit(data, target="html")
 
     html_out = render(data)
     os.makedirs(os.path.dirname(os.path.abspath(args.output)), exist_ok=True)

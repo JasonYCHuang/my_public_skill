@@ -5,10 +5,8 @@ Render a profile.json (see assets/profile.schema.json) into a
 reference/*.xlsx. Row counts for 教育經歷／現任職位／主要履歷 are computed
 from however many entries are in the JSON (not hardcoded to 2/3/7 rows).
 
-Only the core fields are used (name..note, photos). Extended HTML-only
-fields (research_areas/achievements/publications/metrics) are ignored here
-— see references/note-writing-guide.md for why the xlsx template
-intentionally stays narrower than the HTML card.
+The record is a closed set of 10 fields shared with the HTML card — see
+references/field-contract.md. Fields with no data hold a literal "-".
 
 Usage:
     python3 profile_json_to_xlsx.py <profile.json> -o <output.xlsx>
@@ -24,6 +22,8 @@ import os
 import openpyxl
 from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
 from openpyxl.utils import get_column_letter
+
+from validate_profile import validate_or_exit
 
 LABEL_FILL = PatternFill("solid", fgColor="DCE6F1")
 SUBHEAD_FILL = PatternFill("solid", fgColor="F2F2F2")
@@ -41,7 +41,7 @@ CENTER = Alignment(horizontal="center", vertical="center", wrap_text=True)
 LEFT = Alignment(horizontal="left", vertical="center", wrap_text=True)
 RIGHT = Alignment(horizontal="right", vertical="center")
 
-PLACEHOLDER = "不詳（未公開）"
+PLACEHOLDER = "-"  # the one sanctioned "no data" marker; see field-contract.md
 
 
 def val(v):
@@ -121,7 +121,7 @@ def build(data):
         set_cell(f"E{r}", val(e.get("degree")), align=LEFT)
         r += 1
 
-    positions = data.get("positions") or ["不詳（未公開）"]
+    positions = data.get("positions") or [PLACEHOLDER]
     pos_start = edu_last_row + 1
     pos_end = pos_start + len(positions) - 1
     merge(f"A{pos_start}:A{pos_end}")
@@ -195,6 +195,8 @@ def main():
 
     with open(args.profile_json, "r", encoding="utf-8") as f:
         data = json.load(f)
+
+    validate_or_exit(data, target="xlsx")
 
     wb = build(data)
     os.makedirs(os.path.dirname(os.path.abspath(args.output)), exist_ok=True)
