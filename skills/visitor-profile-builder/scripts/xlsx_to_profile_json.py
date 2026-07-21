@@ -33,6 +33,8 @@ try:
 except ImportError:
     sys.exit("需要 openpyxl：pip install openpyxl")
 
+from validate_profile import report, validate
+
 PLACEHOLDER_VALUES = {None, "", "-", "－", "—", "–"}
 EMPTY = "-"  # the one sanctioned "no data" marker (see validate_profile.py)
 
@@ -177,7 +179,32 @@ def main():
 
     with open(out_path, "w", encoding="utf-8") as f:
         json.dump(data, f, ensure_ascii=False, indent=2)
-    print(f"wrote {out_path}")
+    # flush: the findings below go to stderr, which is unbuffered, so without
+    # this the errors appear *above* the "wrote" line and read as if nothing
+    # was written.
+    print(f"wrote {out_path}", flush=True)
+
+    # This is the only script that *writes* a profile.json without checking
+    # it, so entry point A used to defer every problem to the next command:
+    # extraction succeeded, then the generator aborted on a source file that
+    # was over a row limit. Report it here, where the offending xlsx is still
+    # what the user is looking at.
+    #
+    # Warn, never abort: references/xlsx-source-format.md promises an
+    # over-limit source file still reads in fine, and the whole point of the
+    # json is that it can be edited down before generating.
+    errors, warnings = validate(data)
+    if errors or warnings:
+        # Only errors block the generators. Warnings here are usually just
+        # "jsonschema 未安裝" — heading them as things to fix before
+        # generating would be a false alarm on a perfectly good file.
+        heading = (
+            "\n以下問題會讓產檔腳本拒絕執行，請先修正 json："
+            if errors else
+            "\n（以下僅為提醒，不影響產檔）"
+        )
+        print(heading, file=sys.stderr)
+        report(errors, warnings)
 
 
 if __name__ == "__main__":

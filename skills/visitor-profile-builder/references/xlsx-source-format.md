@@ -60,6 +60,18 @@ column-A merge whose top-left cell value matches the section label
 ## Placeholder convention
 
 Both seed files use literal `-` for "no data" in per-row cells (education,
-current positions, career). `is_placeholder()` in both scripts treats
-`None`, `""`, `-`, `－`, `—` as equivalent — treat any of these as "empty",
-not as a real value, when reading or writing.
+current positions, career). The two directions are deliberately asymmetric:
+
+- **Reading** (`xlsx_to_profile_json.py`): `is_placeholder()` treats `None`,
+  `""`, `-`, `－`, `—`, `–` as equivalent, and `cell_value()` collapses them
+  all to the single sanctioned `-`. Seed files spell "empty" several ways;
+  the contract allows one, so normalising on the way in is what stops an
+  em-dash from a 2019 spreadsheet failing validation later.
+- **Writing** (`profile_json_to_xlsx.py`): `val()` only maps `None`/`""` to
+  `-`. It does *not* normalise the full-width variants, and doesn't need to —
+  `validate_or_exit()` runs first and rejects every other spelling outright,
+  so they can't reach the writer. `val()` is a last-resort guard for a
+  missing key, not a second normaliser.
+
+When adapting these scripts to a layout variant, keep that split: normalise
+generously when reading unknown files, stay strict when writing.
