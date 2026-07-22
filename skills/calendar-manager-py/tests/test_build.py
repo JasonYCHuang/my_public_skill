@@ -188,6 +188,84 @@ class TestMediaCli:
         assert all(l.startswith("MEDIA:/") for l in lines)
 
 
+class TestPngBranch:
+    """The png half of build() without a real Chrome: the node call is faked,
+    so the branch logic (placement, failure reporting, font flag) is what's
+    under test — screenshot.js itself is covered by the live-run script."""
+
+    def _fake_node(self, make_png=True, returncode=0):
+        import pytest
+        Image = pytest.importorskip("PIL.Image")
+
+        def run(cmd, capture_output=True, text=True):
+            import types
+            if make_png:
+                tmp_dir = Path(cmd[2])
+                for html in tmp_dir.glob("*.html"):
+                    im = Image.new("RGB", (700, 500), (255, 255, 255))
+                    im.putpixel((1, 1), (0, 0, 0))
+                    im.save(html.with_suffix(".png"))
+            return types.SimpleNamespace(returncode=returncode, stdout="", stderr="")
+        return run
+
+    def test_png_recorded_and_verified(self, events, tmp_path, monkeypatch):
+        monkeypatch.setattr(B.subprocess, "run", self._fake_node())
+        job_dir = tmp_path / "job"
+        manifest, results = B.build(events, str(job_dir), 2026, 8, "範例",
+                                    ["html", "png"], skip_weeks=True)
+        assert results["month-png"]["ok"], results
+        entry = manifest.data["artifacts"]["month-png"]
+        assert entry["verified"] is True
+        assert Path(entry["path"]).exists()
+        assert entry["path"].endswith("26年8月.png")
+        assert not list((job_dir / ".tmp").glob("*.png"))  # staged copy moved out
+
+    def test_screenshot_failure_is_reported_not_hidden(self, events, tmp_path, monkeypatch):
+        monkeypatch.setattr(B.subprocess, "run",
+                            self._fake_node(make_png=False, returncode=1))
+        manifest, results = B.build(events, str(tmp_path / "job"), 2026, 8, "範例",
+                                    ["html", "png"], skip_weeks=True)
+        assert results["month-png"]["ok"] is False
+        assert "month-png" not in manifest.data["artifacts"]  # 沒產出就不登記
+        assert results["month-html"]["ok"]  # html half unaffected
+
+    def test_font_preflight_blocks_before_browser(self, events, tmp_path, monkeypatch):
+        import pytest
+        monkeypatch.setattr(B.V, "cjk_font_check",
+                            lambda: {"ok": False, "skipped": False, "detail": "no font"})
+        launched = []
+        monkeypatch.setattr(B.subprocess, "run",
+                            lambda *a, **k: launched.append(1))
+        with pytest.raises(SystemExit) as e:
+            B.build(events, str(tmp_path / "job"), 2026, 8, "範例",
+                    ["html", "png"], skip_weeks=True)
+        assert e.value.code == 3
+        assert launched == []  # 瀏覽器從未啟動
+
+    def test_allow_missing_font_places_but_marks_unverified(self, events, tmp_path, monkeypatch):
+        monkeypatch.setattr(B.V, "cjk_font_check",
+                            lambda: {"ok": False, "skipped": False, "detail": "no font"})
+        monkeypatch.setattr(B.subprocess, "run", self._fake_node())
+        manifest, results = B.build(events, str(tmp_path / "job"), 2026, 8, "範例",
+                                    ["html", "png"], skip_weeks=True,
+                                    allow_missing_font=True)
+        entry = manifest.data["artifacts"]["month-png"]
+        assert Path(entry["path"]).exists()      # 搬進去方便查看
+        assert entry["verified"] is False        # 但標記未通過
+        assert results["month-png"]["ok"] is False
+
+
+class TestBuildFailurePath:
+    def test_failing_html_verify_fails_the_build(self, events, tmp_path, monkeypatch):
+        monkeypatch.setattr(B.V, "verify_html",
+                            lambda *a, **k: {"ok": False, "checks": [], "detail": "forced"})
+        manifest, results = B.build(events, str(tmp_path / "job"), 2026, 8, "範例",
+                                    ["html"], skip_weeks=True)
+        assert results["month-html"]["ok"] is False
+        assert manifest.data["artifacts"]["month-html"]["verified"] is False
+        assert not all(r["ok"] for r in results.values())  # CLI 據此回非零
+
+
 class TestApplyPlanRange:
     def test_range_over_ops(self, tmp_path):
         plan = {"calendar": "c", "backend": "google", "operations": [

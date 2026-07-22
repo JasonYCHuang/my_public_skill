@@ -22,7 +22,7 @@ GENERATED = {
 
 # Longest extensions first + a guard, so "plan.json" can't half-match as
 # "plan.js".
-FILE_RE = re.compile(r"[\w.一-鿿-]+\.(?:json|yaml|html|py|js|md|txt)(?![A-Za-z0-9])")
+FILE_RE = re.compile(r"[\w.一-鿿-]+\.(?:json|yaml|html|py|js|md|txt|sh)(?![A-Za-z0-9])")
 
 
 def _mentioned_files(text):

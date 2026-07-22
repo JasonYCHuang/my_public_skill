@@ -136,6 +136,7 @@ calendar-manager-py/
 │   ├── verify_output.py    -- 結構檢查：HTML 格線/標題、PNG 檔頭/空白、CJK 預檢
 │   ├── job.py              -- job 目錄、原子寫入、Manifest（list/path/verify/media）
 │   ├── screenshot.js       -- HTML → PNG（系統 Chrome，退 puppeteer 快取）
+│   ├── verify-live-icloud.sh -- 實機驗證：pytest 蓋不到的 CalDAV/Chrome 環節（用測試行事曆）
 │   ├── package.json
 │   └── icloud/             -- iCloud CalDAV 後端（純 Python）
 │       ├── _common.py          -- 共用 helpers；TZ 常數在此
@@ -147,6 +148,8 @@ calendar-manager-py/
 
 ## Editing this skill
 
-先讀 `references/orchestration.md`，改完跑 `python3 -m pytest tests/ -q`。
+先讀 `references/orchestration.md`，改完跑 `python3 -m pytest tests/ -q`；
+動到 CalDAV 寫入或 screenshot 相關的，再用測試行事曆跑
+`scripts/verify-live-icloud.sh "測試行事曆名"` 實機驗證。
 欄位規則在 `assets/plan.schema.json`、地點配色在 `assets/loc-class.json`，
 別在別處硬編。`tests/test_docs_consistency.py` 讓文件-程式漂移直接紅燈。
