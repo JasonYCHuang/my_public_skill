@@ -40,6 +40,7 @@ from datetime import datetime, timedelta
 _HERE = os.path.dirname(os.path.abspath(__file__))
 SCHEMA_PATH = os.path.join(_HERE, "..", "assets", "plan.schema.json")
 
+PLAN_SCHEMA_ID = "calendar-manager-py/plan@1"
 DT_FMT = "%Y-%m-%d %H:%M"
 DT_RE = re.compile(r"^\d{4}-\d{2}-\d{2} \d{2}:\d{2}$")
 DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
@@ -191,10 +192,12 @@ def validate(plan):
     if not isinstance(duration, int) or not (1 <= duration <= 1440):
         errors.append(f"default_duration_minutes「{duration}」必須是 1–1440 的整數")
 
-    known_keys = {"calendar", "backend", "default_duration_minutes", "operations"}
+    known_keys = {"schema", "calendar", "backend", "default_duration_minutes", "operations"}
     for k in plan:
         if k not in known_keys:
             errors.append(f"未知的欄位「{k}」（允許：{'、'.join(sorted(known_keys))}）")
+    if "schema" in plan and plan["schema"] != PLAN_SCHEMA_ID:
+        errors.append(f"schema「{plan['schema']}」不是 {PLAN_SCHEMA_ID}")
 
     ops = plan.get("operations")
     if not isinstance(ops, list) or not ops:
@@ -261,7 +264,8 @@ def main():
     errors, warnings = validate(plan)
 
     if args.json:
-        print(json.dumps({"ok": not errors, "notes": notes,
+        print(json.dumps({"schema": "calendar-manager-py/validate-result@1",
+                          "ok": not errors, "notes": notes,
                           "errors": errors, "warnings": warnings},
                          ensure_ascii=False, indent=2))
     else:

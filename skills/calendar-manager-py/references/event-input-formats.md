@@ -1,92 +1,32 @@
-# Terse 行事曆 input formats actually used in practice
+# Terse 行事曆 input：解析器管什麼、你判斷什麼
 
-The `calendar-manager` skill maps a natural-language request like "時間、地點、事項"
-into a calendar event. In practice two terse formats dominate, both seen
-repeatedly in the same session — handle them confidently without asking
-for clarification.
+使用者輸入以「行事曆加入：M/D HHMM 城市 事項」為主。格式規則全部收進
+`scripts/parse_entries.py`——**不用你記，也不要重新解讀它解析成功的行**：
 
-## Format A: 「行事曆加入：M/D HHMM 城市 事項」
-
-```
-行事曆加入：7/15 1930 深圳 印度文A1 chap 04
-行事曆加入：7/13晚上19:00閱讀印度文A1第1章
+```bash
+printf '%s\n' "行事曆加入：7/15 1930 深圳 印度文A1 chap 04" \
+  | python3 scripts/parse_entries.py - --calendar 測試行事曆
 ```
 
-- **`M/D`** — month/day with NO year. The year is always the current year
-  of the conversation. The agent should not ask "which year?" if the
-  date is in the past for the current year — instead default to the same
-  M/D in the current year. If the user says something like "明年 7/15"
-  then it's the next year.
-- **`HHMM`** — 24-hour, no colon, no space. So `1930` = 19:30, `0930`
-  = 09:30. The user can also write `晚上19:00` (with colon) or
-  `早上09:30` — treat all of these as the same.
-- **Default end time** — start + 1 hour, unless the user specifies
-  "到 HH:MM" / "until HH:MM". Do NOT ask for end time when only start
-  is given.
-- **Location** — the word right after the time. Common values: 淮安,
-  深圳, 台灣, 在家. Maps directly into the `location` field.
-- **Item (summary)** — everything after the location. May contain spaces,
-  punctuation, English, and chapter numbers ("chap 04" / "第1章" /
-  "chap02" — all valid). Preserve verbatim; don't translate "chap" to
-  "第X章" or vice versa.
-- **No closing punctuation** is normal — don't add period/句號.
+已內建：`M/D` 無年份→今年（過了也**不要問**；「明年」→+1）；`1930`＝19:30、
+`930`＝9:30、`晚上7:00`／`早上09:30`／`下午3:00`（PM 且 <12 自動 +12）；
+只給開始→結束＝開始＋預設時長（**不要問**）、「到 HH:MM」有給就用；地點＝
+時間後第一個空白隔開的詞，無空白連寫只切 `assets/loc-class.json` 的已知
+地點；事項逐字保留（"chap 04"／"第1章" 不互改、不加句號）。
 
-### Mistake to avoid
-Don't reach for the `icloud-calendar` skill's `add_event.py` here — the
-sibling skill is off-limits per the user's stored memory. Use
-`scripts/icloud/create_event.py` from this skill (positional args,
-`YYYY-MM-DD HH:MM` format).
+## 留給你的（缺口清單＋警告）
 
-### Companion operations
-When the user later says "改到當天早上0930" (move to 09:30), update via
-`scripts/icloud/update_event.py` with the *same* UID — never create a
-new event and delete the old one for a simple time-shift, the user
-wants the UID stable so any linked alarms / shared invites keep working.
+1. **`✗ 缺地點`／`✗ 無法解析`** —— 問使用者。不猜、不沿用鄰近事件的地點
+   （ask-don't-guess，行事曆主人明確要求過）。
+2. **`⚠️ 編號相同／未隨日期遞增`** —— 「連 N 天同章」typo 模式（真實案例：
+   7/16、7/17 都打 chap 05，7/16 其實是 chap 04）。寫入前用選擇題問：
+   「7/16 那個 chap 05 是不是該改成 chap 04？（A. 留著 / B. 改 / C. 刪）」。
+   選「留著」就尊重——可能真的在複習。
 
-## Format B: "改 X / 刪 X / 那個是 Y"
+## 對話式指涉（純軟判斷）
 
-When the user follows up with a short reference like
-"改 7/16 那個 chap 04" or "那個是 7/17", they're almost always referring
-to the **most recently mentioned event** in the conversation. Don't ask
-"which event?", just operate on the last one. If multiple were created
-in a row and it's genuinely ambiguous (more than 2 events in the last
-few turns), ask with a multiple-choice question showing the candidate
-UIDs/summaries rather than free-form.
+「改 7/16 那個」「那個是 7/17」幾乎都指**最近提到的事件**——直接操作，
+別問「哪一個？」。連建 3 筆以上、真有歧義才用選擇題列候選 uid／摘要。
 
-## Sequence pattern: 「連續 N 天同章」
-
-```text
-7/13 19:00 深圳 印度文A1 chap 01
-7/15 19:30 深圳 印度文A1 chap 04
-7/16 19:30 深圳 印度文A1 chap 04
-7/17 09:30 深圳 印度文A1 chap 05
-```
-
-The user often enters 3-7 days in a row with the same chapter and *will
-make a typo* on one of them. The exact failure shape that triggered
-this reference was a real session: the user typed `chap 05` for both
-7/16 and 7/17 in succession, the agent wrote both as-is, and only the
-follow-up `"7/16 那個改成 chap 04"` revealed that 7/16 was meant to be
-a re-read of chap 04 (the user only read it once that day). Best
-practice:
-
-1. **Create all the events first**, then run `list_events.py` to show
-   them back in a table.
-2. **Read the chapter sequence aloud** (in your own head if not in the
-   response). If you see `01, 04, 04, 05` that's plausible (started,
-   re-read, advanced). If you see `01, 04, 05, 05` and the user only
-   said "印度文 A1 chap XX" without further context, that's the typo
-   shape — *before* confirming all writes succeeded, ask:
-   `"7/16 那個 chap 05 是不是應該改成 chap 04？"` with a multiple-choice
-   of (A. 留著 / B. 改成 chap 04 / C. 刪除).
-3. If the user explicitly picks "A. 留著" then respect that — they may
-   actually be reviewing yesterday's chapter on purpose. But ask first
-   rather than assuming — silent duplicate-chapter entries are the
-   single most common mistake in 連續學習 sessions, and the fix is
-   one `update_event.py` call if caught within the same session.
-
-The same shape recurs for any 連續學習 plan: language chapters,
-course lectures, training videos, book sections. The chapter/lecture
-number is in the summary, the typo is one digit different, and the user
-is typing fast — assume at least one typo per 4-5 entries and check
-explicitly.
+單欄位修改（改時間）：plan 的 `update` 只填 `uid`＋要改的欄位（patch 語意，
+其餘程式保留）。**不要**刪掉重建——uid 穩定，連動提醒／共享邀請才不斷。

@@ -168,3 +168,32 @@ class TestDocuments:
     def test_derive_title_prefix(self):
         assert G.derive_title_prefix("範例 2026 年 8 月行事曆") == "範例"
         assert G.derive_title_prefix("OO董 2026 年 12 月行事曆") == "OO董"
+
+
+class TestLocConfig:
+    """Location colors are data (assets/loc-class.json), not code."""
+
+    def test_module_mapping_comes_from_the_shipped_file(self, skill_root):
+        import json
+        cfg = json.loads((skill_root / "assets" / "loc-class.json")
+                         .read_text(encoding="utf-8"))
+        assert G.LOC_CLASS == cfg["LOC_CLASS"]
+        assert G.SPARE_LETTERS == cfg["SPARE_LETTERS"]
+
+    def test_missing_file_falls_back_to_defaults(self, tmp_path):
+        loc, spares = G.load_loc_config(tmp_path / "nope.json")
+        assert loc and spares  # non-empty built-in defaults
+
+    def test_broken_file_falls_back_to_defaults(self, tmp_path):
+        p = tmp_path / "loc.json"
+        p.write_text("{not json", encoding="utf-8")
+        loc, spares = G.load_loc_config(p)
+        assert loc and spares
+
+    def test_custom_file_is_honored(self, tmp_path):
+        import json
+        p = tmp_path / "loc.json"
+        p.write_text(json.dumps({"LOC_CLASS": {"火星": "a"},
+                                 "SPARE_LETTERS": ["b"]}), encoding="utf-8")
+        loc, spares = G.load_loc_config(p)
+        assert loc == {"火星": "a"} and spares == ["b"]

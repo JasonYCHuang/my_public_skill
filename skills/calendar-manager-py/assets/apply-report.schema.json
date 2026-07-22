@@ -1,0 +1,31 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "calendar-manager-py/apply-report@1",
+  "title": "apply-report.json（寫入側讀回覆核紀錄）",
+  "description": "apply_plan.py apply 的逐筆結果，放在 plan.json 旁。ok=true 代表每筆操作都執行且讀回一致。tests/ 拿真實產出驗證此契約。",
+  "type": "object",
+  "required": ["schema", "plan", "calendar", "backend", "applied_at", "ok", "operations"],
+  "properties": {
+    "schema": { "const": "calendar-manager-py/apply-report@1" },
+    "plan": { "type": "string", "description": "plan.json 的絕對路徑" },
+    "calendar": { "type": "string" },
+    "backend": { "const": "icloud" },
+    "applied_at": { "type": "string", "description": "ISO 8601（含時區）" },
+    "ok": { "type": "boolean" },
+    "operations": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["index", "op", "ok", "detail"],
+        "properties": {
+          "index": { "type": "integer", "minimum": 1 },
+          "op": { "enum": ["create", "update", "delete"] },
+          "summary": { "type": "string" },
+          "uid": { "type": ["string", "null"] },
+          "ok": { "type": "boolean" },
+          "detail": { "type": "string" }
+        }
+      }
+    }
+  }
+}

@@ -55,18 +55,29 @@ SKILL_DIR = Path(__file__).resolve().parent.parent
 MONTH_TEMPLATE = SKILL_DIR / "assets" / "模板_月曆.html"
 WEEK_TEMPLATE = SKILL_DIR / "assets" / "模板_週曆.html"
 
-# The locations the calendar owner has color habits for. These keep their
-# letters forever; only edit this dict deliberately. The shipped 地點A/B/C/D
-# keys are placeholders -- rename them to your team's real site/office names
-# (the matching --loc-a..d colors are already in the templates).
-LOC_CLASS = {"地點A": "a", "地點B": "b", "地點C": "c", "地點D": "d"}
-LOC_ORDER = list(LOC_CLASS.keys())
+# Location→color-letter mapping is *data*, not code: onboarding a new team
+# is an edit to assets/loc-class.json, never to this script. LOC_CLASS keys
+# keep their letters forever ("顏色會讓我習慣"); locations not listed get
+# SPARE_LETTERS in first-seen order. Falls back to the shipped placeholders
+# if the file is missing or unreadable.
+LOC_CONFIG_PATH = SKILL_DIR / "assets" / "loc-class.json"
+_LOC_DEFAULTS = {
+    "LOC_CLASS": {"地點A": "a", "地點B": "b", "地點C": "c", "地點D": "d"},
+    "SPARE_LETTERS": ["e", "f", "g", "h"],
+}
 
-# Letters handed to locations *not* in LOC_CLASS, in first-seen order within
-# the current events set. --loc-e..h (粉/黃/紫/紅) exist in both templates'
-# :root blocks -- to allow more than 8 total locations, add a --loc-i pair
-# there and the letter here.
-SPARE_LETTERS = ["e", "f", "g", "h"]
+
+def load_loc_config(path=LOC_CONFIG_PATH):
+    try:
+        with open(path, encoding="utf-8") as f:
+            cfg = json.load(f)
+        return dict(cfg["LOC_CLASS"]), list(cfg["SPARE_LETTERS"])
+    except (OSError, ValueError, KeyError, TypeError):
+        return dict(_LOC_DEFAULTS["LOC_CLASS"]), list(_LOC_DEFAULTS["SPARE_LETTERS"])
+
+
+LOC_CLASS, SPARE_LETTERS = load_loc_config()
+LOC_ORDER = list(LOC_CLASS.keys())
 
 TIME_RANGE_RE = re.compile(r"^(\d{2}:\d{2}-\d{2}:\d{2})\s+(.*)$")
 ALLDAY_RE = re.compile(r"^\[全天\]\s*(.*)$")

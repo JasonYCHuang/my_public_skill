@@ -258,6 +258,31 @@ def _cmd_path(args):
     return 0
 
 
+def _media_order(aid):
+    """month first, then weeks by number — the order to send them in chat."""
+    if aid.startswith("month"):
+        return (0, 0)
+    mm = re.match(r"week-(\d+)-", aid)
+    return (1, int(mm.group(1)) if mm else 99)
+
+
+def _cmd_media(args):
+    """Print ready-to-paste MEDIA: lines for every *verified* PNG — the
+    mechanical half of "send the image inline, month first". Composing the
+    surrounding message (and the retry ladder if a send doesn't render) stays
+    with the model."""
+    m = Manifest.load(args.job_dir)
+    pngs = [(aid, e) for aid, e in m.data["artifacts"].items()
+            if e.get("kind") == "png" and e.get("verified")]
+    if not pngs:
+        print("manifest 中沒有已通過驗證的 PNG（先用 --formats html,png 重跑 build.py？）",
+              file=sys.stderr)
+        return 1
+    for aid, e in sorted(pngs, key=lambda t: _media_order(t[0])):
+        print(f"MEDIA:{e['path']}")
+    return 0
+
+
 def _cmd_verify(args):
     m = Manifest.load(args.job_dir)
     results = m.reverify_hashes()
@@ -294,6 +319,10 @@ def main():
     p = sub.add_parser("verify", help="重新雜湊所有 artifact，比對 manifest")
     p.add_argument("job_dir")
     p.set_defaults(func=_cmd_verify)
+
+    p = sub.add_parser("media", help="印出已驗證 PNG 的 MEDIA: 行（月曆在前）")
+    p.add_argument("job_dir")
+    p.set_defaults(func=_cmd_media)
 
     args = ap.parse_args()
     sys.exit(args.func(args))

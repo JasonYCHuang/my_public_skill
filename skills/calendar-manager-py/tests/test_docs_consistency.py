@@ -58,6 +58,9 @@ class TestMentionedFilesExist:
     def test_orchestration(self, skill_root):
         self._assert_all_exist(skill_root, "references/orchestration.md")
 
+    def test_event_input_formats(self, skill_root):
+        self._assert_all_exist(skill_root, "references/event-input-formats.md")
+
 
 class TestDocumentedBehaviorIsShipped:
     """The specific drifts found in the parent skill, pinned as assertions."""

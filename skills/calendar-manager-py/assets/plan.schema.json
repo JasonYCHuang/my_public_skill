@@ -7,6 +7,10 @@
   "additionalProperties": false,
   "required": ["calendar", "operations"],
   "properties": {
+    "schema": {
+      "const": "calendar-manager-py/plan@1",
+      "description": "檔案自我標識（parse_entries.py 產出的草稿會帶上；可省略）"
+    },
     "calendar": {
       "type": "string",
       "minLength": 1,

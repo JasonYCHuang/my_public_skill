@@ -133,6 +133,76 @@ class TestBuildCli:
         assert out.returncode != 0
         assert "未知格式" in out.stderr
 
+    def test_print_range_needs_no_other_args(self):
+        out = subprocess.run(
+            [sys.executable, str(SCRIPTS / "build.py"),
+             "--year", "2026", "--month", "8", "--print-range"],
+            capture_output=True, text=True)
+        assert out.returncode == 0, out.stderr
+        assert out.stdout.strip() == "2026-08-01 2026-09-06"
+
+    def test_print_range_json(self):
+        out = subprocess.run(
+            [sys.executable, str(SCRIPTS / "build.py"),
+             "--year", "2026", "--month", "8", "--print-range", "--json"],
+            capture_output=True, text=True)
+        assert json.loads(out.stdout) == {"schema": "calendar-manager-py/range@1",
+                                          "start": "2026-08-01", "end": "2026-09-06"}
+
+    def test_missing_title_prefix_rejected_without_print_range(self, tmp_path):
+        out = subprocess.run(
+            [sys.executable, str(SCRIPTS / "build.py"), "x.json",
+             "--year", "2026", "--month", "8"],
+            capture_output=True, text=True)
+        assert out.returncode != 0
+        assert "--title-prefix" in out.stderr
+
+
+class TestMediaCli:
+    def _media(self, job_dir):
+        return subprocess.run(
+            [sys.executable, str(SCRIPTS / "job.py"), "media", str(job_dir)],
+            capture_output=True, text=True)
+
+    def test_no_verified_png_exits_nonzero(self, events, tmp_path):
+        job_dir, _, _ = _run_build(events, tmp_path)
+        out = self._media(job_dir)
+        assert out.returncode == 1
+
+    def test_prints_month_first_then_weeks(self, events, tmp_path):
+        import pytest
+        Image = pytest.importorskip("PIL.Image")
+        job_dir, manifest, _ = _run_build(events, tmp_path)
+        for aid, name in [("week-2-png", "w2.png"), ("month-png", "m.png"),
+                          ("week-1-png", "w1.png")]:
+            p = tmp_path / "job" / name
+            im = Image.new("RGB", (700, 500), (255, 255, 255))
+            im.putpixel((0, 0), (0, 0, 0))
+            im.save(p)
+            manifest.record(aid, str(p), "png", verify={"ok": True, "checks": []})
+        manifest.save()
+        out = self._media(job_dir)
+        assert out.returncode == 0
+        lines = out.stdout.strip().splitlines()
+        assert [l.rsplit("/", 1)[-1] for l in lines] == ["m.png", "w1.png", "w2.png"]
+        assert all(l.startswith("MEDIA:/") for l in lines)
+
+
+class TestApplyPlanRange:
+    def test_range_over_ops(self, tmp_path):
+        plan = {"calendar": "c", "backend": "google", "operations": [
+            {"op": "create", "summary": "a", "location": "x",
+             "start": "2026-08-03 09:00", "end": "2026-08-03 10:00"},
+            {"op": "create", "summary": "b", "location": "x",
+             "start": "2026-07-30 09:00", "end": "2026-07-30 10:00"}]}
+        f = tmp_path / "plan.json"
+        f.write_text(json.dumps(plan, ensure_ascii=False), encoding="utf-8")
+        out = subprocess.run(
+            [sys.executable, str(SCRIPTS / "apply_plan.py"), "range", str(f)],
+            capture_output=True, text=True)
+        assert out.returncode == 0, out.stderr
+        assert out.stdout.strip() == "2026-07-30 2026-08-03"
+
 
 class TestApplyPlanCheck:
     """The backend-agnostic read-back verification."""

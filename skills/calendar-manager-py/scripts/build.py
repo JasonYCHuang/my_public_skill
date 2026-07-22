@@ -8,6 +8,7 @@ calendar events into verified files.
                      [--job-dir DIR] [--formats html,png] [--skip-weeks]
                      [--allow-missing-font] [--json]
     python3 build.py --from-icloud "行事曆名" --year 2026 --month 8 --title-prefix 範例 ...
+    python3 build.py --year 2026 --month 8 --print-range   # 只印該抓的區間，不產檔
 
 The input is an events.json in the Google-REST shape (what a Google
 `list_events` tool returns, and what `icloud/list_events.py --json` emits) —
@@ -57,6 +58,7 @@ for p in (_HERE, os.path.join(_HERE, "icloud")):
 import job as J  # noqa: E402
 import verify_output as V  # noqa: E402
 import generate_calendar as G  # noqa: E402
+import validate_events as VE  # noqa: E402
 
 ALL_FORMATS = ("html", "png")
 
@@ -234,8 +236,10 @@ def main():
                     help="直接從 iCloud 抓需要的區間（區間由週次規則精確算出）")
     ap.add_argument("--year", type=int, required=True)
     ap.add_argument("--month", type=int, required=True)
-    ap.add_argument("--title-prefix", required=True,
+    ap.add_argument("--title-prefix",
                     help='頁面標題與週曆標題共用的前綴，例如「範例」→「範例 2026 年 8 月行事曆」')
+    ap.add_argument("--print-range", action="store_true",
+                    help="只印出該月視圖需要抓的日期區間（給 Google 等外部 list_events 用），不產檔")
     ap.add_argument("--job-dir",
                     help="輸出資料夾（預設：~/mein-agent-storage/cal-out/<目標年月>/<時間戳>-<前綴>）")
     ap.add_argument("--formats", default="html",
@@ -253,6 +257,19 @@ def main():
     if not (1 <= args.month <= 12):
         _die(f"month 必須是 1–12，收到 {args.month}")
 
+    if args.print_range:
+        lo, hi = G.fetch_range_for_month(args.year, args.month)
+        if args.json:
+            print(json.dumps({"schema": "calendar-manager-py/range@1",
+                              "start": str(lo), "end": str(hi)}))
+        else:
+            print(f"{lo} {hi}")
+            _log(f"ℹ️  用你的 list events 工具抓 {lo} 00:00 到 {hi} 23:59（含），"
+                 "存成 events.json 後再跑 build.py")
+        sys.exit(0)
+    if not args.title_prefix:
+        _die("缺 --title-prefix（只有 --print-range 可以不給）")
+
     if args.from_icloud:
         events, (lo, hi) = fetch_icloud_events(args.from_icloud, args.year, args.month)
         source = f"icloud:{args.from_icloud} {lo}..{hi}"
@@ -260,11 +277,17 @@ def main():
     elif args.events_json:
         with open(args.events_json, encoding="utf-8") as f:
             events = json.load(f)
-        if not isinstance(events, list):
-            _die("events.json 最外層必須是事件陣列本身（不是包在物件裡）")
         source = os.path.abspath(args.events_json)
     else:
         _die("請給 events.json，或用 --from-icloud 直接抓")
+
+    # 進場契約（assets/events.schema.json）：壞事件在這裡被點名，
+    # 而不是渲染到一半 KeyError 或默默畫錯。
+    ev_errors = VE.validate(events)
+    if ev_errors:
+        for e in ev_errors:
+            _log(f"❌ {e}")
+        _die(f"\nevents 驗證失敗（{len(ev_errors)} 項），未產生任何檔案。")
 
     job_dir = args.job_dir
     if not job_dir:
@@ -282,6 +305,7 @@ def main():
     all_ok = all(r["ok"] for r in results.values())
     if args.json:
         print(json.dumps({
+            "schema": "calendar-manager-py/build-result@1",
             "ok": all_ok,
             "job_dir": manifest.job_dir,
             "manifest": manifest.path,

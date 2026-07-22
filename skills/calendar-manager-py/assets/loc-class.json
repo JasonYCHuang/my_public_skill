@@ -1,0 +1,10 @@
+{
+  "$comment": "地點→顏色字母的對照。onboard 新團隊改這個檔，不用改程式。LOC_CLASS 的地點永遠保留自己的顏色（顏色會讓使用者習慣）；不在表裡的地點依出現順序拿 SPARE_LETTERS（粉/黃/紫/紅）。要超過 8 個地點：先在兩個模板的 :root 加 --loc-i 色組，再把字母加進 SPARE_LETTERS。",
+  "LOC_CLASS": {
+    "地點A": "a",
+    "地點B": "b",
+    "地點C": "c",
+    "地點D": "d"
+  },
+  "SPARE_LETTERS": ["e", "f", "g", "h"]
+}

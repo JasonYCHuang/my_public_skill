@@ -4,6 +4,7 @@ Execute a validated plan.json against the calendar, then *prove* it landed.
 
     python3 apply_plan.py apply plan.json [--dry-run] [--report PATH] [--json]
     python3 apply_plan.py check plan.json events.json [--json]
+    python3 apply_plan.py range plan.json          # check 該抓哪段區間，印出來
 
 **apply** (iCloud backend only — it's the one a plain Python process can
 drive): normalize → validate → for each operation: execute via CalDAV, then
@@ -277,9 +278,34 @@ def cmd_check(args):
         mark = "✓" if r["ok"] else ("○" if r["ok"] is None else "✗")
         _log(f"{mark} op#{r['index']} {r['op']}「{r.get('summary', '')}」— {r['detail']}")
     if args.json:
-        print(json.dumps({"ok": ok, "operations": results}, ensure_ascii=False, indent=2))
+        print(json.dumps({"schema": "calendar-manager-py/check-result@1",
+                          "ok": ok, "operations": results},
+                         ensure_ascii=False, indent=2))
     _log("覆核通過。" if ok else "覆核未全數通過——見上方 ✗/○。")
     return 0 if ok else 1
+
+
+def cmd_range(args):
+    """Print the date range a check-fetch must cover — min/max over the
+    plan's operations, so the model never has to work it out."""
+    plan, _ = _load_plan(args.plan_json)
+    days = []
+    for op in plan["operations"]:
+        for k in ("start", "end"):
+            v = op.get(k)
+            if isinstance(v, str) and len(v) >= 10:
+                days.append(v[:10])
+    if not days:
+        _die("plan 的操作裡沒有任何日期（全是 update/delete uid？）——直接用事件本身的日期抓。")
+    lo, hi = min(days), max(days)
+    if args.json:
+        print(json.dumps({"schema": "calendar-manager-py/range@1",
+                          "start": lo, "end": hi}))
+    else:
+        print(f"{lo} {hi}")
+        _log(f"ℹ️  用你的 list events 工具抓 {lo} 00:00 到 {hi} 23:59（含），"
+             "存成 events.json 後跑 apply_plan.py check")
+    return 0
 
 
 def main():
@@ -299,6 +325,11 @@ def main():
     p.add_argument("events_json")
     p.add_argument("--json", action="store_true")
     p.set_defaults(func=cmd_check)
+
+    p = sub.add_parser("range", help="印出 check 需要抓回的日期區間")
+    p.add_argument("plan_json")
+    p.add_argument("--json", action="store_true")
+    p.set_defaults(func=cmd_range)
 
     args = ap.parse_args()
     sys.exit(args.func(args))
