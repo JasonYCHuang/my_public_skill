@@ -252,7 +252,8 @@ def main():
     )
     ap.add_argument("profile_json", metavar="profile.json|來源.xlsx",
                     help="輸入的 profile.json，或直接給來源 xlsx（會自動抽取）")
-    ap.add_argument("--job-dir", help="輸出資料夾（預設：./vpb-out/<姓名>-<時間戳>）")
+    ap.add_argument("--job-dir",
+                    help="輸出資料夾（預設：~/mein-agent-storage/vpb-out/<年月>/<時間戳>-<姓名>）")
     ap.add_argument("--formats", default="html,xlsx",
                     help="逗號分隔，可選 html,xlsx,png（預設 html,xlsx；png 需要 Node/Chrome）")
     ap.add_argument("--allow-missing-font", action="store_true",
@@ -268,7 +269,10 @@ def main():
     job_dir = args.job_dir
     if not job_dir:
         nm = _peek_name(args.profile_json)
-        job_dir = os.path.join("vpb-out", f"{J.slugify(nm)}-{J.now_stamp()}")
+        stamp = J.now_stamp()  # YYYYMMDD-HHMMSS；前 6 碼即年月
+        job_dir = os.path.expanduser(os.path.join(
+            "~", "mein-agent-storage", "vpb-out", stamp[:6],
+            f"{stamp}-{J.slugify(nm)}"))
 
     manifest, results = build(args.profile_json, job_dir, formats,
                               allow_missing_font=args.allow_missing_font)

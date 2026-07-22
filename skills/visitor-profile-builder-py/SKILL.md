@@ -40,8 +40,8 @@ The *code* here is safe to publish; the *output* is not.
 
 - **Never save a real `profile.json`/HTML/xlsx/PNG inside this skill folder.**
   This package gets copied and redistributed as a unit. `build.py` writes into
-  a **job directory you point it at** (default `./vpb-out/…` in the consuming
-  project), never inside the skill. `assets/profile.example.json` must stay
+  a **job directory you point it at** (default
+  `~/mein-agent-storage/vpb-out/<年月>/<時間戳>-<姓名>`), never inside the skill. `assets/profile.example.json` must stay
   fictional.
 - **Aggregation is itself privacy-relevant**, even when every individual fact
   is public. Keep the discipline (verified facts only, explicit "-" for gaps,
@@ -61,7 +61,7 @@ then call scripts as `/tmp/vpb-venv/bin/python3 scripts/....py`.
 ## The one command
 
 ```bash
-python3 scripts/build.py <profile.json> --job-dir <dir> [--formats html,xlsx,png]
+python3 scripts/build.py <profile.json> [--job-dir <dir>] [--formats html,xlsx,png]
 ```
 
 It runs, in order: **validate → (create job dir) → render → verify → atomic
@@ -88,7 +88,7 @@ The user hands you a file already in the "個人信息登記表" layout (see
 takes the xlsx directly — extraction happens in-process, so it's one command:
 
 ```bash
-python3 scripts/build.py "來源.xlsx" --job-dir out/姓名
+python3 scripts/build.py "來源.xlsx"
 ```
 
 The extracted `sources` holds a `原始來源檔案` placeholder with an empty url
@@ -134,7 +134,7 @@ The more common case, and the part that stays **your** judgment:
    confidently-identified turns up.
 4. **Build** — html and xlsx by default; add png if the user wants an image:
    ```bash
-   python3 scripts/build.py profile.json --job-dir out/姓名 --formats html,xlsx,png
+   python3 scripts/build.py profile.json --formats html,xlsx,png
    ```
    `build.py` runs the CJK-font preflight and the structural verify for you.
    For a PNG, still **look at it** (the Read tool renders images) as a final
