@@ -22,6 +22,7 @@ ln -s "$(pwd)/51_skill_my_public/skills/<skill-name>" ~/.claude/skills/<skill-na
 ```
 skills/
   calendar-manager-py/
+  icloud-backup-py/
   visitor-profile-builder-py/
   <skill-name>/
     SKILL.md      # 必要，skill 的說明與觸發時機

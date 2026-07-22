@@ -2,3 +2,6 @@
 *.log
 .env
 tmp*/
+__pycache__/
+*.py[cod]
+.pytest_cache/
