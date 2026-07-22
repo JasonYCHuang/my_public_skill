@@ -1,0 +1,294 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>範例 第四週行事曆</title>
+<style>
+:root{
+  --bg:#eef0f2;
+  --surface:#ffffff;
+  --ink:#121826;
+  --muted:#5b6474;
+  --line:#dde1e6;
+  --accent:#a8672c;
+  --accent-soft:#f3e6d6;
+  --loc-a:#2f7d6c; --loc-a-soft:#e2f1ec;
+  --loc-b:#b0542e; --loc-b-soft:#f7e6dd;
+  --loc-c:#3f5c99; --loc-c-soft:#e5eaf5;
+  --loc-d:#8a4a78; --loc-d-soft:#f3e4ef;
+  --loc-e:#c2185b; --loc-e-soft:#fce4ec;
+  --loc-f:#b8860b; --loc-f-soft:#fdf3d1;
+  --loc-g:#6a3fb5; --loc-g-soft:#ece4f7;
+  --loc-h:#c62828; --loc-h-soft:#fde3e1;
+  --shadow: 0 1px 2px rgba(18,24,38,0.06), 0 8px 20px -12px rgba(18,24,38,0.18);
+}
+
+*{box-sizing:border-box;}
+
+body{
+  margin:0;
+  background:var(--bg);
+  color:var(--ink);
+  font-family:"PingFang TC","Noto Sans TC","Microsoft JhengHei","Hiragino Sans GB",sans-serif;
+  -webkit-font-smoothing:antialiased;
+}
+
+.page{
+  max-width:1400px;
+  margin:0 auto;
+  padding:40px clamp(16px,3vw,48px) 64px;
+}
+
+.masthead{
+  display:flex;
+  flex-wrap:wrap;
+  align-items:baseline;
+  justify-content:space-between;
+  gap:12px 24px;
+  padding-bottom:20px;
+  margin-bottom:24px;
+  border-bottom:2px solid var(--ink);
+}
+.masthead__title{
+  margin:0;
+  font-size:clamp(24px,3.4vw,34px);
+  font-weight:700;
+  letter-spacing:0.02em;
+  text-wrap:balance;
+}
+.masthead__title sup{
+  margin-left:8px;
+  font-size:0.4em;
+  font-weight:600;
+  color:var(--accent);
+  vertical-align:2px;
+}
+.masthead__meta{
+  font-family:ui-monospace,"SF Mono","Cascadia Code",Consolas,monospace;
+  font-size:13px;
+  color:var(--muted);
+  font-variant-numeric:tabular-nums;
+}
+.masthead__back{
+  font-size:13px;
+  color:var(--muted);
+  text-decoration:none;
+  border-bottom:1px solid var(--line);
+}
+.masthead__back:hover{ color:var(--accent); border-color:var(--accent); }
+
+.legend{
+  display:flex;
+  flex-wrap:wrap;
+  gap:8px 18px;
+  margin-bottom:22px;
+  font-size:13px;
+  color:var(--muted);
+}
+.legend__item{display:inline-flex; align-items:center; gap:7px;}
+.legend__swatch{
+  width:10px; height:10px; border-radius:3px; display:inline-block;
+}
+
+.grid-wrap{ overflow-x:auto; }
+
+.grid{
+  display:grid;
+  grid-template-columns:repeat(7,minmax(180px,1fr));
+  gap:1px;
+  background:var(--line);
+  border:1px solid var(--line);
+  border-radius:10px;
+  overflow:hidden;
+  min-width:1260px;
+  box-shadow:var(--shadow);
+}
+
+.grid__weekday{
+  background:var(--ink);
+  color:var(--bg);
+  font-size:13px;
+  font-weight:600;
+  letter-spacing:0.08em;
+  text-align:center;
+  padding:10px 0;
+  position:sticky;
+  top:0;
+}
+
+.day{
+  background:var(--surface);
+  min-height:220px;
+  padding:12px 13px 14px;
+  display:flex;
+  flex-direction:column;
+  gap:10px;
+}
+.day--empty{ background:var(--bg); }
+.day--weekend{ background:color-mix(in srgb, var(--surface) 92%, var(--muted)); }
+
+.day__head{
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:6px;
+}
+.day__num{
+  font-family:ui-monospace,"SF Mono","Cascadia Code",Consolas,monospace;
+  font-size:19px;
+  font-weight:700;
+  font-variant-numeric:tabular-nums;
+}
+
+.loc{
+  font-size:11px;
+  font-weight:600;
+  padding:2px 8px;
+  border-radius:999px;
+  white-space:nowrap;
+  letter-spacing:0.02em;
+}
+.loc--a{ color:var(--loc-a); background:var(--loc-a-soft); }
+.loc--b{ color:var(--loc-b); background:var(--loc-b-soft); }
+.loc--c{ color:var(--loc-c); background:var(--loc-c-soft); }
+.loc--d{ color:var(--loc-d); background:var(--loc-d-soft); }
+.loc--e{ color:var(--loc-e); background:var(--loc-e-soft); }
+.loc--f{ color:var(--loc-f); background:var(--loc-f-soft); }
+.loc--g{ color:var(--loc-g); background:var(--loc-g-soft); }
+.loc--h{ color:var(--loc-h); background:var(--loc-h-soft); }
+.loc--move{
+  display:inline-flex; align-items:center; gap:3px;
+  background:var(--bg);
+  color:var(--ink);
+  border:1px solid var(--line);
+}
+.loc__arrow{ color:var(--accent); font-weight:700; }
+
+.day__events{
+  list-style:none;
+  margin:0; padding:0;
+  display:flex;
+  flex-direction:column;
+  gap:7px;
+}
+.day__free{
+  margin:0;
+  color:var(--muted);
+  font-size:13px;
+}
+
+.ev{
+  font-size:13px;
+  line-height:1.5;
+  display:flex;
+  flex-wrap:wrap;
+  gap:2px 6px;
+}
+.ev__time{
+  font-family:ui-monospace,"SF Mono","Cascadia Code",Consolas,monospace;
+  font-variant-numeric:tabular-nums;
+  color:var(--accent);
+  font-weight:700;
+  white-space:nowrap;
+}
+.ev__time--tag{
+  background:var(--accent-soft);
+  color:var(--accent);
+  border-radius:4px;
+  padding:0 5px;
+  font-weight:600;
+}
+.ev__desc{ color:var(--ink); }
+.ev--note{
+  font-size:13px;
+  font-style:italic;
+  color:var(--muted);
+  background:var(--accent-soft);
+  border-radius:5px;
+  padding:3px 7px;
+}
+.ev--allday .ev__desc{ font-weight:500; }
+
+@media (max-width: 640px){
+  .masthead{ flex-direction:column; align-items:flex-start; }
+}
+</style>
+</head>
+<body>
+<div class="page">
+  <header class="masthead">
+    <h1 class="masthead__title">範例 第四週行事曆<sup>04/27–05/03</sup></h1>
+  </header>
+
+  <div class="legend">
+    <span class="legend__item"><span class="legend__swatch" style="background:var(--loc-a)"></span>地點A</span>
+    <span class="legend__item"><span class="legend__swatch" style="background:var(--loc-b)"></span>地點B</span>
+    <span class="legend__item"><span class="legend__swatch" style="background:var(--loc-c)"></span>地點C</span>
+    <span class="legend__item"><span class="legend__swatch" style="background:var(--loc-d)"></span>地點D</span>
+    <span class="legend__item">→ 表示當日移地</span>
+  </div>
+
+  <div class="grid-wrap">
+    <div class="grid">
+      <div class="grid__weekday">週一</div>
+    <div class="grid__weekday">週二</div>
+    <div class="grid__weekday">週三</div>
+    <div class="grid__weekday">週四</div>
+    <div class="grid__weekday">週五</div>
+    <div class="grid__weekday">週六</div>
+    <div class="grid__weekday">週日</div>
+      <div class="day">
+      <div class="day__head">
+        <span class="day__num">27</span>
+        <span class="loc loc--b">地點B</span>
+      </div>
+      <ul class="day__events"><li class="ev"><span class="ev__time">09:00-10:00</span><span class="ev__desc">晉升布達大會</span></li><li class="ev"><span class="ev__time">10:00-12:00</span><span class="ev__desc">主管會議</span></li><li class="ev"><span class="ev__time">14:00-16:00</span><span class="ev__desc">事業群月會</span></li><li class="ev"><span class="ev__time">16:00-17:00</span><span class="ev__desc">人資月會</span></li></ul>
+    </div>
+    <div class="day">
+      <div class="day__head">
+        <span class="day__num">28</span>
+        <span class="loc loc--b">地點B</span>
+      </div>
+      <ul class="day__events"><li class="ev ev--allday"><span class="ev__time ev__time--tag">全天</span><span class="ev__desc">來訪-合作夥伴代表</span></li><li class="ev"><span class="ev__time">09:00-10:00</span><span class="ev__desc">季度會議</span></li><li class="ev"><span class="ev__time">10:00-12:00</span><span class="ev__desc">子公司月會</span></li><li class="ev"><span class="ev__time">14:00-15:00</span><span class="ev__desc">稽核月會</span></li><li class="ev"><span class="ev__time">15:00-16:00</span><span class="ev__desc">法務月會</span></li></ul>
+    </div>
+    <div class="day">
+      <div class="day__head">
+        <span class="day__num">29</span>
+        <span class="loc loc--b">地點B</span>
+      </div>
+      <ul class="day__events"><li class="ev"><span class="ev__time">09:00-09:30</span><span class="ev__desc">財務月會</span></li><li class="ev"><span class="ev__time">09:30-10:30</span><span class="ev__desc">會計月會</span></li><li class="ev"><span class="ev__time">10:30-11:30</span><span class="ev__desc">產業分析月會</span></li><li class="ev"><span class="ev__time">14:00-16:00</span><span class="ev__desc">商務總處月會</span></li></ul>
+    </div>
+    <div class="day">
+      <div class="day__head">
+        <span class="day__num">30</span>
+        <span class="loc loc--move loc--b-a">地點B<span class="loc__arrow" aria-hidden="true">→</span>地點A</span>
+      </div>
+      <ul class="day__events"><li class="ev"><span class="ev__time">09:10-11:15</span><span class="ev__desc">航班CI600 地點B-地點A</span></li><li class="ev"><span class="ev__time">17:40-18:40</span><span class="ev__desc">年度策略供應商大會(飯店大宴會廳)</span></li></ul>
+    </div>
+    <div class="day">
+      <div class="day__head">
+        <span class="day__num">1</span>
+        <span class="loc loc--a">地點A</span>
+      </div>
+      <ul class="day__events"><li class="ev ev--note">地點A園區勞動節放假</li><li class="ev"><span class="ev__time">18:30-20:30</span><span class="ev__desc">晚宴-合作夥伴</span></li></ul>
+    </div>
+    <div class="day day--weekend">
+      <div class="day__head">
+        <span class="day__num">2</span>
+        <span class="loc loc--a">地點A</span>
+      </div>
+      <p class="day__free">—</p>
+    </div>
+    <div class="day day--weekend">
+      <div class="day__head">
+        <span class="day__num">3</span>
+        <span class="loc loc--a">地點A</span>
+      </div>
+      <p class="day__free">—</p>
+    </div>
+    </div>
+  </div>
+</div>
+</body>
+</html>

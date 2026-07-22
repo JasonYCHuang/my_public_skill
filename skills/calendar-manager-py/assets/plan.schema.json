@@ -1,0 +1,80 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "calendar-manager-py/plan@1",
+  "title": "行事曆寫入計畫（plan.json）",
+  "description": "LLM 把使用者的「時間、地點、事項」判讀成這份計畫（軟）；validate_plan.py 驗證、apply_plan.py 執行並讀回覆核（硬）。缺時間/地點/事項時要先問使用者，不能猜——那是模型的責任，不是這份 schema 能驗的。",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["calendar", "operations"],
+  "properties": {
+    "calendar": {
+      "type": "string",
+      "minLength": 1,
+      "description": "iCloud 行事曆顯示名稱（區分大小寫）或 Google calendarId"
+    },
+    "backend": {
+      "enum": ["icloud", "google", "other"],
+      "default": "icloud",
+      "description": "icloud：apply_plan.py 可直接執行；google/other：由 agent 用它的行事曆工具執行，執行後用 apply_plan.py check 覆核"
+    },
+    "default_duration_minutes": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 1440,
+      "default": 60,
+      "description": "只給開始時間的事件，結束時間 = 開始 + 此值。每個新行事曆問過一次後就固定"
+    },
+    "operations": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "oneOf": [
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["op", "summary", "location", "start"],
+            "properties": {
+              "op": { "const": "create" },
+              "summary": { "type": "string", "minLength": 1, "description": "事項" },
+              "location": { "type": "string", "description": "地點。空字串代表「已確認過確實沒有地點」，不是「沒問到」" },
+              "start": {
+                "type": "string",
+                "pattern": "^\\d{4}-\\d{2}-\\d{2}( \\d{2}:\\d{2})?$",
+                "description": "「YYYY-MM-DD HH:MM」；全天事件給「YYYY-MM-DD」並設 all_day"
+              },
+              "end": {
+                "type": "string",
+                "pattern": "^(\\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2})?$",
+                "description": "省略或空字串時由 default_duration_minutes 推得（normalize 填入）"
+              },
+              "all_day": { "type": "boolean", "default": false }
+            }
+          },
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["op", "uid"],
+            "properties": {
+              "op": { "const": "update" },
+              "uid": { "type": "string", "minLength": 1 },
+              "summary": { "type": "string", "minLength": 1 },
+              "location": { "type": "string" },
+              "start": { "type": "string", "pattern": "^\\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2}$" },
+              "end": { "type": "string", "pattern": "^\\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2}$" }
+            },
+            "description": "patch 語意：只列想改的欄位，其餘欄位由 apply_plan.py 讀現值保留——iCloud 全欄位覆寫的陷阱由程式扛，不用模型記得"
+          },
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["op", "uid"],
+            "properties": {
+              "op": { "const": "delete" },
+              "uid": { "type": "string", "minLength": 1 }
+            }
+          }
+        ]
+      }
+    }
+  }
+}

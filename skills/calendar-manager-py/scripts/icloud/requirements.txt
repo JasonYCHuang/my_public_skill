@@ -1,0 +1,2 @@
+caldav>=3.0
+icalendar>=5.0
