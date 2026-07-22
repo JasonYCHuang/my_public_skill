@@ -42,3 +42,14 @@ def test_optional_module_missing_is_not_failure():
 def test_required_module_missing_is_failure():
     c = D._check_module("definitely_not_installed_xyz", "why", required=True)
     assert c["ok"] is False
+
+
+def test_venv_hint_when_a_py_check_fails():
+    checks = [{"name": "py:caldav", "ok": False, "detail": "", "fix": "pip install caldav"}]
+    assert "venv" in D.venv_hint(checks)
+
+
+def test_no_venv_hint_when_py_checks_pass():
+    checks = [{"name": "py:caldav", "ok": True, "detail": "", "fix": ""},
+              {"name": "chrome", "ok": False, "detail": "", "fix": "x"}]
+    assert D.venv_hint(checks) == ""

@@ -106,6 +106,20 @@ def _check_cjk_font():
                   "" if res["ok"] else "sudo apt install -y fonts-noto-cjk")
 
 
+VENV_HINT = (
+    "Ubuntu 23+ 的系統 Python 會擋 pip install（externally-managed，PEP 668）。"
+    "建 venv 一次搞定：python3 -m venv ~/.venvs/calmgr && "
+    "~/.venvs/calmgr/bin/pip install caldav icalendar jsonschema Pillow，"
+    "之後以 ~/.venvs/calmgr/bin/python3 執行本 skill 的所有腳本。")
+
+
+def venv_hint(checks):
+    """Any missing Python package on a PEP 668 system needs the venv recipe,
+    not a bare pip install — surface it once instead of per-package."""
+    return VENV_HINT if any(c["name"].startswith("py:") and not c["ok"]
+                            for c in checks) else ""
+
+
 def run_checks(backend="icloud", png=False):
     checks = [_check_python(),
               _check_module("jsonschema", "plan 的 schema 驗證會被略過", required=False)]
@@ -133,9 +147,10 @@ def main():
 
     checks = run_checks(backend=args.backend, png=args.png)
     ok = all(c["ok"] for c in checks)
+    hint = venv_hint(checks)
     if args.json:
         print(json.dumps({"schema": "calendar-manager-py/doctor-result@1",
-                          "ok": ok, "checks": checks},
+                          "ok": ok, "checks": checks, "hint": hint},
                          ensure_ascii=False, indent=2))
     else:
         for c in checks:
@@ -144,6 +159,8 @@ def main():
             print(line)
             if not c["ok"] and c["fix"]:
                 print(f"    修復：{c['fix']}")
+        if hint:
+            print(f"提示：{hint}")
         print("環境就緒。" if ok else "有缺項——照上面的修復指令處理後重跑。")
     sys.exit(0 if ok else 1)
 

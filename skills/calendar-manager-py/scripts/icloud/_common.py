@@ -1,7 +1,10 @@
 """Shared helpers for the iCloud CalDAV CRUD scripts. Not run directly.
 
 Requires the `caldav` and `icalendar` packages -- see requirements.txt in
-this folder (`pip install -r requirements.txt`, ideally in a venv).
+this folder (`pip install -r requirements.txt`, ideally in a venv). Those
+imports are deliberately *lazy* (inside the functions that need them): TZ is
+the team-timezone constant that dependency-free scripts (parse_entries.py)
+must be able to import even where caldav isn't installed.
 """
 import os
 import pathlib
@@ -9,11 +12,8 @@ import uuid
 from datetime import datetime
 from zoneinfo import ZoneInfo
 
-import caldav
-from icalendar import Calendar as ICalendar, Event as ICalEvent
-
-# Edit this for your team's timezone (same idea as LOC_CLASS in
-# generate_calendar.py -- one constant to change, not a CLI flag).
+# Edit this for your team's timezone (same idea as loc-class.json -- one
+# constant to change, not a CLI flag).
 TZ = ZoneInfo("Asia/Taipei")
 
 CREDS_PATH = pathlib.Path(__file__).parent / ".credentials"
@@ -47,6 +47,7 @@ def load_creds():
 
 
 def get_principal():
+    import caldav  # lazy: see module docstring
     username, password = load_creds()
     client = caldav.DAVClient(url="https://caldav.icloud.com/", username=username, password=password)
     return client.principal()
@@ -92,6 +93,7 @@ def format_local(dt):
 
 
 def build_vevent(summary, location, start, end, uid=None):
+    from icalendar import Calendar as ICalendar, Event as ICalEvent  # lazy: see module docstring
     uid = uid or str(uuid.uuid4())
     cal = ICalendar()
     cal.add("prodid", "-//calendar-manager//icloud-caldav//")

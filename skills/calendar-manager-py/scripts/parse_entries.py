@@ -33,10 +33,27 @@ references/event-input-formats.md.
 import argparse
 import datetime
 import json
+import os
 import re
 import sys
 
+_HERE = os.path.dirname(os.path.abspath(__file__))
+for _p in (_HERE, os.path.join(_HERE, "icloud")):
+    if _p not in sys.path:
+        sys.path.insert(0, _p)
+
 import generate_calendar as G  # for the known-location names in loc-class.json
+
+
+def _team_today():
+    """「今天／今年」必須是團隊時區的（icloud/_common.py 的 TZ），不是伺服器
+    本地的——雲端主機常是 UTC，台北凌晨的輸入會被補到前一天/前一年。
+    _common 的重依賴是惰性載入，這個 import 不需要 caldav。"""
+    try:
+        from _common import TZ
+        return datetime.datetime.now(TZ).date()
+    except Exception:  # noqa: BLE001 — 拿不到團隊時區時退回伺服器本地
+        return datetime.date.today()
 
 PREFIX_RE = re.compile(r"^行事曆加入[:：]\s*")
 DATE_RE = re.compile(r"^(明年)?\s*(\d{1,2})/(\d{1,2})\s*")
@@ -132,7 +149,7 @@ def parse_lines(lines, year=None, known_locations=None):
     """-> (operations, issues). known_locations defaults to the loc-class.json
     keys, so a location the team uses daily is recognised even without a
     space before it."""
-    year = year or datetime.date.today().year
+    year = year or _team_today().year
     if known_locations is None:
         known_locations = list(G.LOC_CLASS.keys())
     ops, issues = [], []
@@ -154,7 +171,8 @@ def main():
     ap.add_argument("--calendar", default="",
                     help="寫進 plan 的行事曆名稱／calendarId（不給會列為 issue）")
     ap.add_argument("--backend", default="icloud", choices=["icloud", "google", "other"])
-    ap.add_argument("--year", type=int, help="M/D 補全用的年份（預設今年；「明年」自動 +1）")
+    ap.add_argument("--year", type=int,
+                    help="M/D 補全用的年份（預設＝團隊時區的今年；「明年」自動 +1）")
     ap.add_argument("--out", help="把 plan 草稿寫到這個檔（預設印到 stdout）")
     ap.add_argument("--json", action="store_true",
                     help="stdout 改輸出 {ok, plan, issues, warnings} 摘要")

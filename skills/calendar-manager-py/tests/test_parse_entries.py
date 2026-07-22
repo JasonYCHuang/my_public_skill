@@ -111,6 +111,25 @@ class TestParseLines:
         assert ops[0]["location"] == list(G.LOC_CLASS)[0]
 
 
+class TestTeamTimezone:
+    def test_common_tz_importable_without_caldav(self, skill_root):
+        """回歸釘：_common 的 caldav/icalendar 必須是惰性載入，TZ 才能被
+        無依賴環境（parse_entries、doctor）import。本測試環境沒裝 caldav，
+        直接證明。"""
+        import sys
+        icloud = str(skill_root / "scripts" / "icloud")
+        if icloud not in sys.path:
+            sys.path.insert(0, icloud)
+        import _common
+        assert str(_common.TZ) == "Asia/Taipei"
+
+    def test_team_today_uses_team_tz(self):
+        import datetime
+        from zoneinfo import ZoneInfo
+        from parse_entries import _team_today
+        assert _team_today() == datetime.datetime.now(ZoneInfo("Asia/Taipei")).date()
+
+
 class TestCli:
     def _run(self, text, *args):
         return subprocess.run(
