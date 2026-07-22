@@ -1,0 +1,8 @@
+{
+  "name": "visitor-profile-builder-scripts",
+  "private": true,
+  "description": "Screenshot helper for the visitor-profile-builder skill. Run `npm install` in this folder once.",
+  "dependencies": {
+    "puppeteer-core": ">=22.0.0"
+  }
+}

@@ -1,0 +1,92 @@
+# Maintaining this skill
+
+Notes for anyone *editing* the skill package itself. Nothing here is needed
+to build a profile — if you're just generating a card, stay in `SKILL.md`.
+
+## Before committing changes under `assets/`
+
+Confirm `profile.example.json` is still fully fictional, still covers every
+field (including the `"-"` ones, as a teaching example), and that any sample
+photos are labeled stock/placeholder.
+
+`assets/profile.example.html` is **generated, not written.** If you change
+the example JSON or the HTML template, regenerate it in the same commit — a
+stale sample is worse than none, because it teaches the wrong layout:
+
+```bash
+python3 scripts/profile_json_to_html.py assets/profile.example.json -o assets/profile.example.html
+```
+
+It is the one HTML file allowed to live in this package, and only because
+every value in it is fictional. Real profiles still never go here.
+
+## Don't widen the PNG viewport
+
+The PNG is rendered phone-shaped on purpose (430 CSS px wide, 3x), and the
+HTML has a `@media (max-width:560px)` block that stacks the two tables into
+per-row cards. The reason: these PNGs are read in a chat app on a phone,
+where the image is scaled to screen width — a desktop-width render arrives
+as unreadably small text, and a PNG can't be reflowed by the reader.
+Widening the viewport in `html_to_png.js` silently undoes this. Opening the
+`.html` in a desktop browser still gets the wide table layout.
+
+## Keep the Chrome fallback in `html_to_png.js`
+
+The script needs Chrome/Chromium. On headless/container Linux without one it
+falls back to Puppeteer's own downloaded Chrome
+(`npx puppeteer browsers install chrome`, no root) with `--no-sandbox`.
+**Keep this fallback when editing the script** — it fails silently if
+removed. The same fix lives in `calendar-manager/scripts/screenshot.js`;
+mirror changes to both.
+
+Two things in there are easy to break by "simplifying":
+
+- `CHROME_CACHE_PREFIX` keys off Puppeteer's own platform tag, not
+  `process.platform`. arm64 tags carry an underscore (`mac_arm`,
+  `linux_arm`) while x64 does not — and `"linux_arm-145..."` does **not**
+  start with `"linux-"`, so arm64 Linux needs its own entry. Collapsing the
+  two Linux rows breaks Graviton/Ampere boxes and nothing else, so it
+  survives every test run on x64.
+- The Linux launch flags apply to the **system-Chrome branch too**, not just
+  the fallback. Chrome refuses to start as root — the normal case in a
+  container — so a cloud box with apt-installed Chrome fails without
+  `--no-sandbox` even though a working Chrome is right there.
+
+## Fonts are baked into the PNG
+
+The HTML and xlsx render with the *reader's* fonts, so they are portable.
+The PNG is not: whatever font resolves at screenshot time is pixels forever.
+A clean Ubuntu server image ships no CJK font at all, and `sans-serif`
+resolves to DejaVu Sans, which has no CJK glyphs — every Chinese character
+becomes a tofu box, with no error anywhere. Hence `"Noto Sans CJK TC"` (the
+family name `fonts-noto-cjk` actually registers — `"Noto Sans TC"` alone
+does not match it) in the stack, and the apt line in README. If you touch
+`font-family`, keep a Linux-installable CJK family in it.
+
+## Run the tests
+
+```bash
+python3 -m pytest tests/ -q
+```
+
+Under a second, no Chrome, no network. `tests/test_docs_consistency.py` is
+the one to know about: it checks that the prose still matches the code —
+dangling file references, functions named in docs that no longer exist,
+limits that drifted from the schema, and whether
+`assets/profile.example.html` was regenerated. The rule two sections up is
+enforced there rather than left to habit. See `tests/README.md`.
+
+## Verifying the Linux path at all
+
+Everything in the two sections above fails only on Linux, so a Mac dev box
+proves nothing about it. `scripts/verify-on-ubuntu.sh` runs the whole chain
+on a real Ubuntu host and checks the arch-specific cache prefix, the font
+family, and the root/`--no-sandbox` case. Run it after touching
+`html_to_png.js` or the font stack — and look at the two PNGs it leaves in
+`~/vpb-verify-out/`, because a font failure exits 0 and prints nothing.
+
+## Changing the field contract
+
+Edit `assets/profile.schema.json` — don't hardcode rules in Python. An 11th
+field is a deliberate change to the schema plus both generators plus
+`references/xlsx-source-format.md`. See `field-contract.md`.
