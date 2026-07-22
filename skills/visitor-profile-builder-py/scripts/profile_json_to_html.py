@@ -33,8 +33,6 @@ CSS = """
   --border:#e3e7ed;
   --table-head:#f4f6f9;
   --table-alt:#fafbfc;
-  --note-bg:#fdf6e8;
-  --note-border:#e8c874;
 }
 *{box-sizing:border-box;}
 body{
@@ -145,7 +143,6 @@ td.col-date{white-space:nowrap;color:var(--ink-soft);width:100px;}
    school column from hogging width and wrapping every row onto two lines. */
 th.col-narrow,td.col-narrow{white-space:nowrap;width:1%;}
 
-.note-callout{margin:0 28px 13px;background:var(--note-bg);border-left:3px solid var(--note-border);border-radius:6px;padding:9px 13px;font-size:0.8rem;color:#6b5a25;line-height:1.5;}
 
 .card-footer{padding:11px 28px;border-top:1px solid var(--border);background:var(--table-head);font-size:0.72rem;color:var(--ink-faint);}
 .card-footer .src-title{font-weight:600;color:var(--ink-soft);margin-bottom:4px;}
@@ -196,7 +193,6 @@ th.col-narrow,td.col-narrow{white-space:nowrap;width:1%;}
   .badge{font-size:0.8rem;padding:4px 11px;white-space:normal;align-items:flex-start;}
   .badge .k{white-space:nowrap;}
   .section{padding:14px 18px;}
-  .note-callout{margin:0 18px 14px;font-size:0.82rem;}
   .card-footer{padding:14px 18px;font-size:0.76rem;}
 
   /* Stacked rows: the <thead> labels move onto each cell via data-label. */
@@ -348,8 +344,6 @@ def render(data):
       </table>
     </div>''')
 
-    note_html = f'<div class="note-callout">※ {esc(data["note"])}</div>' if data.get("note") else ""
-
     sources = data.get("sources") or []
     src_items = "".join(
         f'<li><a href="{html_escape.escape(s["url"])}" target="_blank" rel="noopener">{esc(s["title"])}</a></li>'
@@ -394,7 +388,7 @@ def render(data):
       </div>
     </div>
 {"".join(sections)}
-    {note_html}{footer_html}
+    {footer_html}
   </div>
 </div>
 """
