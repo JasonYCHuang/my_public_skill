@@ -22,7 +22,7 @@ ln -s "$(pwd)/51_skill_my_public/skills/<skill-name>" ~/.claude/skills/<skill-na
 ```
 skills/
   calendar-manager/
-  visitor-profile-builder/
+  visitor-profile-builder-py/
   <skill-name>/
     SKILL.md      # 必要，skill 的說明與觸發時機
     ...           # 其他輔助檔案（scripts、references 等，視需要）
