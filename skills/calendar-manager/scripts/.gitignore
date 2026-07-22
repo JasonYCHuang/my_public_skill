@@ -1,5 +1,0 @@
-node_modules/
-*.png
-.venv/
-.credentials
-__pycache__/

@@ -21,7 +21,6 @@ ln -s "$(pwd)/51_skill_my_public/skills/<skill-name>" ~/.claude/skills/<skill-na
 
 ```
 skills/
-  calendar-manager/
   calendar-manager-py/
   visitor-profile-builder-py/
   <skill-name>/
