@@ -34,7 +34,8 @@ python3 scripts/doctor.py [--backend icloud|google] [--png]   # ✗ 附修復指
 
 每個人／團隊一次性：建**專用行事曆**（勿用主行事曆；iCloud 勿用 On My Mac
 本機行事曆），確認識別名（`scripts/icloud/list_calendars.py` / Google
-calendarId）、時區（`scripts/icloud/_common.py` 的 `TZ`）、預設時長
+calendarId）、時區（`scripts/icloud/_common.py` 的 `TZ`，**預設 Asia/Taipei，
+使用者沒特別講就用它**）、預設時長
 （`default_duration_minutes`，通常 60）。地點配色在 `assets/loc-class.json`
 （資料檔）。答案存進 project memory，別每次重問。
 
