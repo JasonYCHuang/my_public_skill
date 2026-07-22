@@ -87,3 +87,36 @@ def test_lock_blocks_concurrent_run(tmp_path):
     proc = run_backup(src, dest, "20260722")
     assert proc.returncode == 1
     assert "正在執行" in proc.stderr
+
+
+def test_no_dest_on_linux_requires_flag(tmp_path, monkeypatch):
+    """非 macOS 平台沒帶 --dest 必須報錯，不能默默用 iCloud 路徑。
+    （backup.py 讀 sys.platform；用子行程跑不好 patch，改為單元測試 import 檢查邏輯。）"""
+    import importlib.util
+    spec = importlib.util.spec_from_file_location("backup", BACKUP)
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    src = make_source(tmp_path)
+    monkeypatch.setattr(mod.sys, "platform", "linux")
+    monkeypatch.setattr(mod.sys, "argv", ["backup.py", "--source", str(src), "--today", "20260722"])
+    with __import__("pytest").raises(SystemExit) as exc:
+        mod.main()
+    assert exc.value.code == 1
+
+
+def test_systemd_units_content():
+    """build_units 是純函式：驗排程時刻、Persistent、ExecStart。"""
+    import importlib.util
+    path = BACKUP.parent / "install_systemd.py"
+    spec = importlib.util.spec_from_file_location("install_systemd", path)
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    service, timer = mod.build_units(
+        ["/usr/bin/python3", "/x/backup.py", "--dest", "/backups"],
+        mod.parse_times("0:30,6:30,12:30,18:30"),
+    )
+    assert "ExecStart=/usr/bin/python3 /x/backup.py --dest /backups" in service
+    for line in ("OnCalendar=*-*-* 00:30:00", "OnCalendar=*-*-* 06:30:00",
+                 "OnCalendar=*-*-* 12:30:00", "OnCalendar=*-*-* 18:30:00"):
+        assert line in timer
+    assert "Persistent=true" in timer

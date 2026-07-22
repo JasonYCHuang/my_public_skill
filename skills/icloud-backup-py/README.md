@@ -1,7 +1,8 @@
 # icloud-backup-py
 
 每 6 小時（00:30、06:30、12:30、18:30 本機時間）把 `~/mein-agent-storage/` 備份到
-Apple iCloud Drive。macOS 專用，Python 3 標準庫 + 系統 rsync，零第三方依賴。
+Apple iCloud Drive（macOS）或任意 `--dest`（Linux）。Python 3 標準庫 + 系統 rsync，
+零第三方依賴。
 
 ## 備份策略：鏡像＋每日快照
 
@@ -25,6 +26,17 @@ python3 scripts/install_launchd.py status    # 檢查狀態
 
 用 launchd 而非 cron：Mac 睡眠時錯過的班次，醒來會補跑一次；cron 直接跳過。
 
+### Linux（如 Ubuntu 上的 hermes agent）
+
+Linux 沒有 iCloud 客戶端，`--dest` 必填（本機路徑或掛載點）：
+
+```bash
+python3 scripts/install_systemd.py install --dest /path/to/backup-target
+loginctl enable-linger $USER   # 無人值守機器必開，否則沒登入時 timer 不跑
+```
+
+systemd user timer + `Persistent=true`，語意對應 launchd（停機錯過開機補跑）。
+
 ## 測試
 
 ```bash
@@ -45,5 +57,6 @@ tar -xzf ".../snapshots/YYYYMMDD.tar.gz" -C /tmp/restore/
 | 檔案 | 用途 |
 |---|---|
 | `scripts/backup.py` | 單次備份：鏡像 + 每日快照 + 修剪 + 報告 |
-| `scripts/install_launchd.py` | launchd 排程 install / status / run-now / uninstall |
-| `tests/test_backup.py` | 自動測試（鏡像、刪除傳播、快照冪等、修剪、鎖） |
+| `scripts/install_launchd.py` | macOS launchd 排程 install / status / run-now / uninstall |
+| `scripts/install_systemd.py` | Linux systemd user timer，同一組子指令，`--dest` 必填 |
+| `tests/test_backup.py` | 自動測試（鏡像、刪除傳播、快照冪等、修剪、鎖、Linux 缺 dest 報錯、systemd unit 內容） |

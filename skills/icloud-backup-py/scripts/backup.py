@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""icloud-backup：把 SOURCE 鏡像到 iCloud Drive，並每日保留一份 tar.gz 快照。
+"""icloud-backup：把 SOURCE 鏡像到 iCloud Drive（macOS 預設；其他平台用 --dest 指定），並每日保留一份 tar.gz 快照。
 
 流程（全剛性，任一步失敗即非零退出）：
   1. 檢查 source 存在；dest 若在 iCloud Drive 底下，先確認 iCloud Drive 已啟用
@@ -99,13 +99,19 @@ def prune_snapshots(snapshots: Path, today: str, keep_days: int) -> list[str]:
 def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument("--source", type=Path, default=DEFAULT_SOURCE)
-    ap.add_argument("--dest", type=Path, default=DEFAULT_DEST)
+    ap.add_argument("--dest", type=Path, default=None,
+                    help="macOS 預設 iCloud Drive；其他平台（如 Ubuntu 上的 hermes agent）必填")
     ap.add_argument("--keep-days", type=int, default=14)
     ap.add_argument("--today", default=None, help=argparse.SUPPRESS)  # 測試用：覆寫日期 YYYYMMDD
     args = ap.parse_args()
 
     started = datetime.datetime.now().astimezone()
     today = args.today or started.strftime("%Y%m%d")
+
+    if args.dest is None:
+        if sys.platform != "darwin":
+            die("本平台沒有 iCloud Drive 預設路徑，請用 --dest 指定目的地（本機路徑或掛載點）")
+        args.dest = DEFAULT_DEST
 
     if not args.source.is_dir():
         die(f"來源不存在：{args.source}")
