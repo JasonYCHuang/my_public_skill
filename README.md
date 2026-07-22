@@ -23,6 +23,7 @@ ln -s "$(pwd)/51_skill_my_public/skills/<skill-name>" ~/.claude/skills/<skill-na
 skills/
   calendar-manager-py/
   gdrive-backup-py/
+  hermes-gateway-doctor-py/
   icloud-backup-py/
   visitor-profile-builder-py/
   <skill-name>/
