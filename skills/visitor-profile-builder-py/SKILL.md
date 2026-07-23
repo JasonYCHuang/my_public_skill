@@ -194,6 +194,12 @@ of any `reference/` folder holding untouched source xlsx.
   prose/tables), then a smaller resized PNG, then a regenerated PNG, before
   concluding the path is broken. Get the path from
   `python3 scripts/job.py path <job_dir> card-png`.
+- **WeChat attachment sends are unreliable** — html attachments can't be
+  previewed in-chat, and image sends often fail with `CDN upload HTTP 500`.
+  When that happens (or preemptively), share a URL instead: the sibling
+  `share-link-py` skill takes this job dir directly
+  (`python3 ../share-link-py/scripts/share.py <job_dir>`) and prints
+  expiring links to paste into chat.
 
 ## Editing this skill
 

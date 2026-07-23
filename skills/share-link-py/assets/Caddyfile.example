@@ -1,0 +1,23 @@
+# share-link 的 Caddy 站台設定（Caddy 會自動申請/續期 Let's Encrypt HTTPS）。
+#
+# 用法：把這段併進 /etc/caddy/Caddyfile，把域名換成你的，然後
+#     sudo systemctl reload caddy
+#
+# 設計重點：
+#   * webroot 是 <root>/pub —— meta/ 在 webroot 之外，永遠不會被 serve
+#   * 沒開 browse —— 猜不到 token 就列不出任何東西
+#   * X-Robots-Tag + pub/robots.txt（share.py 會寫）雙保險擋搜尋引擎
+#   * 大陸可達性：域名不要用被牆的 NS；主機本身要從大陸連得到（先用
+#     手機開熱點或請對方測 https://share.example.com/robots.txt）
+
+share.example.com {
+	# 換成實際使用者的 home：share.py 的 --root 加 /pub
+	root * /home/AGENT_USER/mein-agent-storage/share-link/pub
+	file_server
+
+	header X-Robots-Tag "noindex, nofollow, noarchive"
+
+	# 防禦性：即使未來有人把 meta 搬進 webroot 也 serve 不到隱藏檔
+	@hidden path */.*
+	respond @hidden 404
+}
