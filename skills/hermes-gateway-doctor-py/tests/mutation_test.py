@@ -30,6 +30,12 @@ MUTANTS = [
      "if pending_restart():", "if False:"),
     ("M7 unit 名驗證錨點拔掉（-n 之類混得進去）",
      "^[A-Za-z0-9][A-Za-z0-9:_.@-]*$", "[A-Za-z0-9]"),
+    ("M8 inbound 閾值改成永不觸發（跨退避週期的耗盡被無視）",
+     "EXHAUST_SPAN_S = 600", "EXHAUST_SPAN_S = 999999"),
+    ("M9 拔掉未知錯誤 catch-all（沒見過的 ERROR 靜默流失）",
+     "elif UNKNOWN_ERR.search(ln):", "elif False:"),
+    ("M10 session 判斷退回 v1（單獨過期證據被當 healthy）",
+     "if c.session_lines:", "if c.session_lines and c.send_failures:"),
 ]
 
 

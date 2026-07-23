@@ -2,6 +2,7 @@
 real 2026-07-22 incident journal."""
 
 import argparse
+import json
 import pathlib
 import subprocess
 import sys
@@ -11,7 +12,7 @@ import pytest
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent.parent / "scripts"))
 
 import doctor  # noqa: E402
-from doctor import classify, positive_int, unit_name  # noqa: E402
+from doctor import classify, inbound_broken, line_ts, positive_int, unit_name  # noqa: E402
 
 NOISE = [
     "ERROR gateway.platforms.weixin: [Weixin] poll error (1/3): iLink POST ilink/bot/getupdates HTTP 524:",
@@ -24,9 +25,19 @@ FAILURES = [
     "ERROR gateway.platforms.base: [Weixin] Failed to send image: CDN upload HTTP 500:",
 ]
 
+# v2 broadening: text sends failing are just as actionable as image/file sends
+TEXT_FAILURES = [
+    "ERROR gateway.platforms.weixin: [Weixin] send_text failed to=o9cq805x: iLink POST HTTP 500:",
+    "ERROR gateway.platforms.base: [Weixin] Failed to send message: connection reset",
+]
+
 SESSION = [
     "WARNING gateway.platforms.weixin: Session expired; pausing for 10 minutes",
     "ERROR gateway.platforms.weixin: sendmessage failed: errcode=-14 errmsg=session timeout",
+]
+
+UNKNOWN = [
+    "ERROR gateway.platforms.weixin: [Weixin] KeyError: 'msg_id' in update handler",
 ]
 
 HEALTHY = [
@@ -35,39 +46,116 @@ HEALTHY = [
 ]
 
 
+def exhaust_line(hhmm):
+    """A timestamped (journalctl -o short-iso) final-retry poll failure."""
+    return (f"2026-07-22T{hhmm}:00+0800 host hermes-gateway[7]: "
+            "ERROR gateway.platforms.weixin: [Weixin] poll error (3/3): "
+            "iLink POST ilink/bot/getupdates HTTP 524:")
+
+
 def test_noise_is_counted_not_flagged():
-    failures, session, noise = classify(NOISE)
-    assert failures == []
-    assert session == []
-    assert noise == 3
+    c = classify(NOISE)
+    assert c.send_failures == []
+    assert c.session_lines == []
+    assert c.unknown_errors == []
+    assert c.noise == 3
 
 
 def test_send_failures_detected():
-    failures, session, noise = classify(NOISE + FAILURES + HEALTHY)
-    assert len(failures) == 2
-    assert session == []
-    assert noise == 3
-    assert all("CDN upload HTTP 500" in ln for ln in failures)
+    c = classify(NOISE + FAILURES + HEALTHY)
+    assert len(c.send_failures) == 2
+    assert c.session_lines == []
+    assert c.noise == 3
+    assert all("CDN upload HTTP 500" in ln for ln in c.send_failures)
+
+
+def test_text_send_failures_are_actionable_too():
+    # v2: "沒收到" isn't only about images — failing TEXT sends must not be
+    # invisible (v1's regex only matched image/document/file/video/audio).
+    c = classify(TEXT_FAILURES)
+    assert len(c.send_failures) == 2
+    assert c.unknown_errors == []
 
 
 def test_session_expiry_detected():
-    failures, session, noise = classify(SESSION)
-    assert failures == []
-    assert len(session) == 2
+    c = classify(SESSION)
+    assert c.send_failures == []
+    assert len(c.session_lines) == 2
+
+
+def test_session_wins_over_send_on_the_same_line():
+    # "sendmessage failed: errcode=-14" matches BOTH broadened SEND_FAIL and
+    # SESSION_EXPIRED — it must land in session (restart cannot fix expiry).
+    c = classify(["ERROR gateway.platforms.weixin: sendmessage failed: errcode=-14"])
+    assert c.send_failures == []
+    assert len(c.session_lines) == 1
 
 
 def test_healthy_log_is_clean():
-    failures, session, noise = classify(HEALTHY)
-    assert (failures, session, noise) == ([], [], 0)
+    # INFO/WARNING lines are not errors — the unknown-error catch-all only
+    # bites on ERROR lines.
+    c = classify(HEALTHY)
+    assert (c.send_failures, c.session_lines, c.noise, c.unknown_errors) == ([], [], 0, [])
 
 
 def test_poll_noise_never_masks_a_real_failure():
     # A line matching both patterns must never be swallowed as noise —
     # POLL_NOISE requires the getupdates signature, send failures don't have it.
     mixed = NOISE * 10 + FAILURES
-    failures, _, noise = classify(mixed)
-    assert len(failures) == 2
-    assert noise == 30
+    c = classify(mixed)
+    assert len(c.send_failures) == 2
+    assert c.noise == 30
+
+
+def test_unknown_error_lines_are_caught_not_dropped():
+    c = classify(NOISE + HEALTHY + UNKNOWN)
+    assert c.unknown_errors == UNKNOWN
+    assert c.send_failures == []
+
+
+# --- inbound exhaustion: single bursts self-recover, repeated bursts don't ---
+
+
+def test_line_ts_parses_short_iso_prefix_only():
+    assert line_ts(exhaust_line("12:00")) is not None
+    assert line_ts(NOISE[2]) is None  # no timestamp prefix -> no span claim
+
+
+def test_line_ts_malformed_stamp_degrades_to_none_not_crash():
+    # digit-shaped but invalid: passes the regex, must not traceback the diagnosis
+    assert line_ts("2026-19-99T99:99:99+0800 host x[1]: ERROR poll error (3/3)") is None
+
+
+def test_recent_restarts_survives_a_corrupt_state_file(tmp_path):
+    # The cross-death memory file may get truncated/garbled mid-write — the
+    # frequency guard must degrade to 0 (allow restart), never crash restart.
+    state = tmp_path / "state"
+    state.mkdir()
+    (state / "restarts.log").write_text("garbage\nnot-a-float\n")
+    assert doctor.recent_restarts(state) == 0
+
+
+def test_single_exhausted_burst_respects_adapter_backoff():
+    # The adapter pauses 10 min and retries by itself — one burst (even the
+    # final 3/3 retry) must NOT trigger a restart.
+    c = classify([exhaust_line("12:00"), exhaust_line("12:04")])
+    assert not inbound_broken(c.exhaust_ts)
+    assert c.noise == 2  # still counted as poll noise
+
+
+def test_repeated_exhaustion_across_backoff_windows_means_inbound_broken():
+    c = classify([exhaust_line("12:00"), exhaust_line("12:25")])
+    assert inbound_broken(c.exhaust_ts)
+
+
+def test_diagnose_inbound_broken_recommends_restart(monkeypatch, capsys):
+    monkeypatch.setattr(doctor, "unit_active", lambda unit: "active")
+    monkeypatch.setattr(doctor, "journal_lines",
+                        lambda unit, since: [exhaust_line("12:00"), exhaust_line("12:25")])
+    assert doctor.main(["diagnose"]) == 1
+    out = capsys.readouterr().out
+    assert "inbound" in out
+    assert doctor.SUGGESTED_REPLY in out
 
 
 # --- boundary validation: caller input is LLM-generated — validate, don't trust ---
@@ -132,6 +220,58 @@ def test_session_expired_verdict_hands_qr_rescan_to_the_user(monkeypatch, capsys
     assert "never run it via scripts" in out
 
 
+def test_session_expiry_alone_escalates_without_needing_send_failures(monkeypatch, capsys):
+    # v2: expiry evidence is decisive on its own (v1 only escalated when send
+    # failures were ALSO present, so a pure-expiry log read as healthy).
+    monkeypatch.setattr(doctor, "unit_active", lambda unit: "active")
+    monkeypatch.setattr(doctor, "journal_lines", lambda unit, since: SESSION)
+    assert doctor.main(["diagnose"]) == 3
+    assert "self-recover" in capsys.readouterr().out  # fresh expiry may heal itself
+
+
+def test_active_but_silent_journal_is_a_hang_not_healthy(monkeypatch, capsys):
+    # OpenClaw doctor's lesson: "running" is not "responding". zero journal
+    # lines while active -> likely hung event loop -> restart, never "healthy".
+    monkeypatch.setattr(doctor, "unit_active", lambda unit: "active")
+    monkeypatch.setattr(doctor, "journal_lines", lambda unit, since: [])
+    assert doctor.main(["diagnose"]) == 1
+    out = capsys.readouterr().out
+    assert "hung" in out
+    assert "wider --since" in out  # idle-window caveat is part of the verdict
+
+    # ...but "not running" still wins over "silent":
+    monkeypatch.setattr(doctor, "unit_active", lambda unit: "inactive")
+    assert doctor.main(["diagnose"]) == 2
+
+
+def test_unknown_error_verdict_restarts_once_with_provenance(monkeypatch, capsys):
+    monkeypatch.setattr(doctor, "unit_active", lambda unit: "active")
+    monkeypatch.setattr(doctor, "journal_lines", lambda unit, since: HEALTHY + UNKNOWN)
+    assert doctor.main(["diagnose"]) == 1
+    out = capsys.readouterr().out
+    assert "unrecognized errors" in out
+    assert UNKNOWN[0] in out                      # raw line shown, not paraphrased
+    assert "add its pattern to doctor.py" in out  # recurrence prevention
+    assert doctor.SUGGESTED_REPLY in out
+
+
+def test_healthy_verdict_points_outside_the_gateway_and_reports_watchdog(monkeypatch, capsys):
+    # v2: a clean gateway + a complaining user must not dead-end — the verdict
+    # redirects the search (agent layer / WeChat client) and reports whether
+    # the systemd watchdog (built-in hang auto-restart) is configured.
+    monkeypatch.setattr(doctor, "unit_active", lambda unit: "active")
+    monkeypatch.setattr(doctor, "journal_lines", lambda unit, since: NOISE + HEALTHY)
+    monkeypatch.setattr(doctor, "watchdog_usec", lambda unit: "0")
+    assert doctor.main(["diagnose"]) == 0
+    out = capsys.readouterr().out
+    assert "OUTSIDE" in out
+    assert "watchdog is OFF" in out
+
+    monkeypatch.setattr(doctor, "watchdog_usec", lambda unit: "1min")
+    assert doctor.main(["diagnose"]) == 0
+    assert "WatchdogUSec=1min" in capsys.readouterr().out
+
+
 def test_verify_failure_escalates_and_success_demands_end_to_end_proof(monkeypatch, capsys):
     monkeypatch.setattr(doctor, "unit_active", lambda unit: "active")
     monkeypatch.setattr(doctor, "journal_lines", lambda unit, since: FAILURES)
@@ -143,9 +283,23 @@ def test_verify_failure_escalates_and_success_demands_end_to_end_proof(monkeypat
     assert "re-send an image" in capsys.readouterr().out
 
 
+def test_verify_unknown_error_survivor_means_blind_restart_is_spent(monkeypatch, capsys):
+    # The blind-fix budget for an unknown error is exactly one restart: if it
+    # is still in the log AFTER the restart, verify must escalate and demand
+    # the pattern be added to the known-error library — not restart again.
+    monkeypatch.setattr(doctor, "unit_active", lambda unit: "active")
+    monkeypatch.setattr(doctor, "journal_lines", lambda unit, since: HEALTHY + UNKNOWN)
+    assert doctor.main(["verify"]) == 1
+    out = capsys.readouterr().out
+    assert "survived the restart" in out
+    assert "add this error's pattern" in out
+    assert UNKNOWN[0] in out
+
+
 def test_diagnose_healthy_and_not_running(monkeypatch, capsys):
     monkeypatch.setattr(doctor, "journal_lines", lambda unit, since: NOISE + HEALTHY)
     monkeypatch.setattr(doctor, "unit_active", lambda unit: "active")
+    monkeypatch.setattr(doctor, "watchdog_usec", lambda unit: "0")
     assert doctor.main(["diagnose"]) == 0
     assert "healthy" in capsys.readouterr().out
 
@@ -271,3 +425,72 @@ def test_inside_unit_reads_cgroup(tmp_path):
 def test_run_reports_missing_binary_without_traceback():
     r = doctor.run(["doctor-no-such-binary-xyz"])
     assert r.returncode == 127 and "command not found" in r.stderr
+
+
+# --- --json: the agent reads FIELDS, never scrapes prose ---
+
+
+def test_json_diagnose_restart_verdict_is_machine_readable(monkeypatch, capsys):
+    monkeypatch.setattr(doctor, "unit_active", lambda unit: "active")
+    monkeypatch.setattr(doctor, "journal_lines", lambda unit, since: NOISE + FAILURES)
+    assert doctor.main(["--json", "diagnose"]) == 1
+    data = json.loads(capsys.readouterr().out)  # loads() proves stdout is ONLY json
+    assert data["cmd"] == "diagnose" and data["exit"] == 1
+    assert data["verdict"] == "send-failures"
+    assert data["suggested_reply"] == doctor.SUGGESTED_REPLY
+    assert any("restart" in step for step in data["next"])
+    assert any("CDN upload HTTP 500" in ln for ln in data["evidence"])
+    assert data["noise"] == 3
+
+
+def test_json_diagnose_healthy_carries_watchdog_and_next(monkeypatch, capsys):
+    monkeypatch.setattr(doctor, "unit_active", lambda unit: "active")
+    monkeypatch.setattr(doctor, "journal_lines", lambda unit, since: HEALTHY)
+    monkeypatch.setattr(doctor, "watchdog_usec", lambda unit: "0")
+    assert doctor.main(["--json", "diagnose"]) == 0
+    data = json.loads(capsys.readouterr().out)
+    assert data["verdict"] == "healthy" and data["watchdog_usec"] == "0"
+    assert any("OUTSIDE" in step for step in data["next"])
+
+
+def test_json_restart_scheduled_contract(monkeypatch, capsys, tmp_path):
+    fake = FakeRun([0, 0])
+    monkeypatch.setattr(doctor, "run", fake)
+    monkeypatch.setattr(doctor, "inside_unit", lambda unit: True)
+    assert doctor.main(["--json", *restart_argv(tmp_path)]) == 0
+    data = json.loads(capsys.readouterr().out)
+    assert data["verdict"] == "scheduled" and data["delay_s"] == 5
+    assert data["suggested_reply"] == doctor.SUGGESTED_REPLY
+    assert data["self_kill"] is True
+    assert data["next"][0].startswith("reply to the user NOW")
+
+
+def test_json_verify_unknown_survivor_demands_pattern_and_test(monkeypatch, capsys):
+    monkeypatch.setattr(doctor, "unit_active", lambda unit: "active")
+    monkeypatch.setattr(doctor, "journal_lines", lambda unit, since: UNKNOWN)
+    assert doctor.main(["--json", "verify"]) == 1
+    data = json.loads(capsys.readouterr().out)
+    assert data["verdict"] == "unknown-error-survived"
+    assert data["evidence"] == UNKNOWN
+    # the 入庫 gate is part of the contract: pattern + test + pytest, not just "edit the file"
+    assert any("pytest" in step for step in data["next"])
+
+
+def test_json_mode_state_does_not_leak_between_invocations(monkeypatch, capsys):
+    # main() must reset json mode and fields each call — a --json run followed
+    # by a prose run (and vice versa) must not mix outputs or stale verdicts.
+    monkeypatch.setattr(doctor, "unit_active", lambda unit: "active")
+    monkeypatch.setattr(doctor, "journal_lines", lambda unit, since: NOISE + FAILURES)
+    assert doctor.main(["--json", "diagnose"]) == 1
+    assert json.loads(capsys.readouterr().out)["verdict"] == "send-failures"
+
+    monkeypatch.setattr(doctor, "journal_lines", lambda unit, since: HEALTHY)
+    monkeypatch.setattr(doctor, "watchdog_usec", lambda unit: "0")
+    assert doctor.main(["diagnose"]) == 0
+    out = capsys.readouterr().out
+    assert "healthy" in out and not out.lstrip().startswith("{")  # prose mode back
+
+    assert doctor.main(["--json", "diagnose"]) == 0
+    data = json.loads(capsys.readouterr().out)
+    assert data["verdict"] == "healthy"
+    assert "evidence" not in data  # stale send-failure fields must not leak
