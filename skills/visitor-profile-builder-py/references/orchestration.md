@@ -63,7 +63,7 @@
 | `profile-json` | 這批產出所依據的 `profile.json` 副本（出處存證） |
 | `card-html` | HTML 個人檔案卡片 |
 | `registry-xlsx` | 個人信息登記表 xlsx |
-| `card-png` | HTML 的手機版截圖（只有要求 png 時才有） |
+| `card-png` | HTML 的手機版截圖（預設必產；僅 `--formats html,xlsx` 明確略過時才沒有） |
 
 **為什麼要 id、不要自由路徑：**原版最根本的問題是「agent 宣稱產出，實際
 沒有」——它憑推理報一條它以為存在的路徑。Manifest 是這件事的解方：後續步驟

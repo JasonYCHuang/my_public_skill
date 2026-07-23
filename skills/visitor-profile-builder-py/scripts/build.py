@@ -254,8 +254,9 @@ def main():
                     help="輸入的 profile.json，或直接給來源 xlsx（會自動抽取）")
     ap.add_argument("--job-dir",
                     help="輸出資料夾（預設：~/mein-agent-storage/vpb-out/<年月>/<時間戳>-<姓名>）")
-    ap.add_argument("--formats", default="html,xlsx",
-                    help="逗號分隔，可選 html,xlsx,png（預設 html,xlsx；png 需要 Node/Chrome）")
+    ap.add_argument("--formats", default="html,xlsx,png",
+                    help="逗號分隔，可選 html,xlsx,png（預設全產；png 需要 Node/Chrome，"
+                         "環境不支援時可用 --formats html,xlsx 略過）")
     ap.add_argument("--allow-missing-font", action="store_true",
                     help="Linux 無 CJK 字型時仍產 PNG（會標記為未通過驗證）")
     ap.add_argument("--json", action="store_true", help="在 stdout 輸出機器可讀的結果摘要")

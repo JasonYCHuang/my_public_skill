@@ -1,7 +1,7 @@
 ---
 name: visitor-profile-builder-py
-description: Build a "個人信息登記表" (personal dossier) as a styled HTML profile card, a matching xlsx, and/or a PNG of the card — from an existing source xlsx or from public web research on a named person. This is the Python-orchestrated variant of visitor-profile-builder: one command (scripts/build.py) validates, generates, verifies, atomically writes, and records every output in an Artifact Manifest, so an output can't be reported as done unless it exists and passed verification. Use when the user hands you a xlsx in this format, or names a person (visitor, professor, official) and asks for a "個人檔案" / "個人信息表", or asks for the html/xlsx/png version of one.
-compatibility: Agent-agnostic Agent Skills package (agentskills.io format). Needs web search + page fetch (for the research workflow), a shell running Python 3 with openpyxl + jsonschema (Pillow for xlsx photo embedding and the PNG blank-check), Node.js + Chrome only for PNG output, and ideally an AskUserQuestion-style tool for photo choices. Install steps are in README.md.
+description: Build a "個人信息登記表" (personal dossier) as a styled HTML profile card, a matching xlsx, and a PNG of the card — from an existing source xlsx or from public web research on a named person. This is the Python-orchestrated variant of visitor-profile-builder: one command (scripts/build.py) validates, generates, verifies, atomically writes, and records every output in an Artifact Manifest, so an output can't be reported as done unless it exists and passed verification. Use when the user hands you a xlsx in this format, or names a person (visitor, professor, official) and asks for a "個人檔案" / "個人信息表", or asks for the html/xlsx/png version of one.
+compatibility: Agent-agnostic Agent Skills package (agentskills.io format). Needs web search + page fetch (for the research workflow), a shell running Python 3 with openpyxl + jsonschema (Pillow for xlsx photo embedding and the PNG blank-check), Node.js + Chrome for the PNG card render (a default output), and ideally an AskUserQuestion-style tool for photo choices. Install steps are in README.md.
 metadata:
   built-for: "002_訪客人員背景調查"
   origin: "Claude Code"
@@ -11,7 +11,7 @@ metadata:
 # Visitor Profile Builder（Python 編排版）
 
 Turns facts about a person — either already sitting in a source xlsx, or
-found via web research — into up to three deliverables (a styled **HTML
+found via web research — into three deliverables (a styled **HTML
 card**, a **"個人信息登記表" xlsx**, and a **PNG** of the card).
 
 This variant produces the **same files** as `visitor-profile-builder`, but
@@ -66,8 +66,10 @@ python3 scripts/build.py <profile.json> [--job-dir <dir>] [--formats html,xlsx,p
 
 It runs, in order: **validate → (create job dir) → render → verify → atomic
 write → hash into manifest**, for every requested format, and exits non-zero
-if anything failed. `--formats` defaults to `html,xlsx`; add `png` only when
-the user wants an image file (needs Node + Chrome). Add `--json` to get a
+if anything failed. `--formats` defaults to `html,xlsx,png` — all three are
+standard deliverables. The png render needs Node + Chrome; only drop it
+(`--formats html,xlsx`) when the environment can't provide them and the user
+agrees to go without the image. Add `--json` to get a
 machine-readable result summary on stdout.
 
 After it runs, **read the result — don't re-announce paths from memory.** The
@@ -132,9 +134,9 @@ The more common case, and the part that stays **your** judgment:
    result to confirm it's the right person**, then fill it into `photos` with
    its `source_url`. Skip only if the user says not to, or nothing
    confidently-identified turns up.
-4. **Build** — html and xlsx by default; add png if the user wants an image:
+4. **Build** — html, xlsx, and png are all produced by default:
    ```bash
-   python3 scripts/build.py profile.json --formats html,xlsx,png
+   python3 scripts/build.py profile.json
    ```
    `build.py` runs the CJK-font preflight and the structural verify for you.
    For a PNG, still **look at it** (the Read tool renders images) as a final
@@ -149,7 +151,7 @@ The more common case, and the part that stays **your** judgment:
   profile.json           -- copy of the exact profile these outputs were built from
   姓名 個人檔案.html
   姓名 個人信息表.xlsx
-  姓名 個人檔案.png       -- only if png was requested
+  姓名 個人檔案.png       -- unless png was explicitly dropped via --formats
   .tmp/                  -- scratch for atomic writes; safe to delete
 ```
 
@@ -162,7 +164,8 @@ of any `reference/` folder holding untouched source xlsx.
   something didn't verify. Read the `verify` block in `manifest.json` (or the
   ✗ line on stderr) for which check failed, fix, re-run. Do **not** report the
   job as done.
-- **CJK font preflight failed (Linux).** `build.py --formats …,png` refuses to
+- **CJK font preflight failed (Linux).** `build.py` (png is in the default
+  formats) refuses to
   render before a browser launch when `fc-list :lang=zh` is empty, because the
   PNG's Chinese would bake into tofu boxes silently. Install the font
   (`sudo apt install -y fonts-noto-cjk`) and re-run, or pass
@@ -171,7 +174,7 @@ of any `reference/` folder holding untouched source xlsx.
   placeholder, never `image_generate` a face.** A fabricated portrait of a
   real person is exactly what the privacy section exists to prevent.
 - **No reply within ~60 min to a photo/format choice → pick the safer
-  default** (no photo, both formats) and keep going, saying which default you
+  default** (no photo, all formats) and keep going, saying which default you
   picked.
 - **This skill only produces html/xlsx/png — never wire iCloud/calendar writes
   into it.** Route "also add this to my calendar" to the sibling
