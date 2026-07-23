@@ -7,13 +7,14 @@ journal against a known-error library and prints ONE verdict, in this order:
 
   not running -> start  |  session expired -> QR re-scan (restart useless)
   |  active-but-silent hang -> restart  |  any send failure (text too) -> restart
-  |  poll exhaustion spanning >10 min -> restart (single bursts self-recover:
-  the adapter backs off 10 min and retries)  |  unknown ERROR -> restart ONCE,
-  then escalate + add the pattern here  |  clean -> look outside the gateway.
+  |  unknown ERROR -> restart ONCE, then escalate + add the pattern here
+  |  clean -> look outside the gateway.
 
-Guardrails that keep "auto" from becoming "runaway": getupdates 5xx poll noise
-is never a signal (it appears when healthy too); >=3 restarts/hour escalates
-instead of looping; every unknown error gets blind-fixed at most once.
+Guardrails that keep "auto" from becoming "runaway": poll errors of ANY flavor
+are never a signal (calibrated 2026-07-23 on 72h of production journal: ~2,400
+poll-error lines incl. 782 final-retry (3/3) exhausts, all while traffic flowed
+fine — see POLL_NOISE); >=3 restarts/hour escalates instead of looping; every
+unknown error gets blind-fixed at most once.
 
 Restart path: ALWAYS `systemctl --user restart` (via a detached systemd-run
 timer). NEVER `hermes gateway restart` — it signals SIGUSR1 into the asyncio
@@ -62,30 +63,26 @@ def positive_int(s):
 #   ... send_text failed ... / ... Failed to send message ...
 SEND_FAIL = re.compile(r"\bsend_?\w* failed|Failed to send \w+")
 
-# Harmless background noise (NOT a health signal — observed on every poll cycle
-# even while real traffic flows fine): e.g.
-#   ERROR gateway.platforms.weixin: [Weixin] poll error (1/3): iLink POST ilink/bot/getupdates HTTP 524:
-POLL_NOISE = re.compile(r"poll error \(\d/\d\).*getupdates HTTP 5\d\d")
-
-# The FINAL retry of a poll burst, e.g. "poll error (3/3): ...". ONE exhausted
-# burst is still not actionable — the adapter self-backoffs 10 minutes and
-# usually recovers (hermes-wechat adapter docs). Only repeated bursts spanning
-# MORE than one backoff window (EXHAUST_SPAN_S) mean inbound is really broken.
-POLL_EXHAUST = re.compile(r"poll error \((\d+)/\1\)")
-EXHAUST_SPAN_S = 600
+# Harmless background noise (NOT a health signal). Calibrated 2026-07-23 on 72h
+# of production journal: ~2,400 poll-error lines — HTTP 524 (Cloudflare long-poll
+# timeout; the (1/3)(2/3)(3/3) cycle repeats every ~90s ALL DAY, no 10-min
+# backoff observed), HTTP 554/522, "Cannot connect to host ilinkai...",
+# "Connection reset", "Server disconnected" — all while real traffic flowed
+# fine. Even the final (3/3) retry is chronic when healthy, so NO poll-error
+# flavor can ever justify a restart; a sustained total connect failure is
+# Tencent/network-side (EXCLUDED_CAUSES) and self-heals when the network does.
+POLL_NOISE = re.compile(r"poll error \(\d/\d\)")
 
 # Genuine session/token expiry (restart won't fix — needs QR re-scan by the user).
-# Checked BEFORE SEND_FAIL: "sendmessage failed: errcode=-14" is expiry, not a
-# restartable send failure.
+# Checked FIRST in classify: expiry markers may sit on any line (even a poll
+# retry or "sendmessage failed: errcode=-14") and must never be misfiled.
 SESSION_EXPIRED = re.compile(r"Session expired|session timeout|[Tt]oken expired|errcode=-14")
 
 # Catch-all for ERROR lines no pattern above recognises: restart ONCE (most
 # unknown errors are stale state); if the SAME error survives the restart,
 # escalate AND add its pattern above — blind-fix each new error at most once.
+# Known resident of this bucket (calibration): "kanban dispatcher: tick failed".
 UNKNOWN_ERR = re.compile(r"\bERROR\b")
-
-# journalctl -o short-iso line prefix, e.g. "2026-07-22T12:34:56+0800 host ..."
-ISO_TS = re.compile(r"^(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2})")
 
 # Ruled out in the 2026-07-22 incident; printed with the restart verdict:
 EXCLUDED_CAUSES = (
@@ -97,11 +94,14 @@ EXCLUDED_CAUSES = (
 # Text still works in this failure mode — reply BEFORE the restart fires:
 SUGGESTED_REPLY = "圖片傳送失敗，我重啟一下 gateway，約 30 秒後請再叫我重傳"
 
-# Escalation is user-only: interactive + secrets — never scripted.
-ESCALATE = ("user must re-run `hermes gateway setup` THEMSELVES (QR re-scan; "
-            "interactive + secrets — never run it via scripts), then "
-            "`systemctl --user restart hermes-gateway` from their own shell "
-            "(no self-restart trap there).")
+# Escalation is human-only (interactive + secrets — never scripted) and must be
+# ROUTED to the operator/machine owner: the complaining WeChat user may be a
+# visitor who cannot (and must not) do any of this.
+ESCALATE = ("notify the OPERATOR (machine owner) — never ask the complaining "
+            "WeChat visitor to do this. The operator must re-run `hermes gateway "
+            "setup` THEMSELVES (QR re-scan; interactive + secrets — never run it "
+            "via scripts), then `systemctl --user restart hermes-gateway` from "
+            "their own shell (no self-restart trap there).")
 
 
 # --- output: prose for humans, --json for the agent -------------------------
@@ -130,51 +130,28 @@ def finish(code):
 
 
 Classified = collections.namedtuple(
-    "Classified", "send_failures session_lines noise exhaust_ts unknown_errors")
-
-
-def line_ts(ln):
-    """Epoch seconds from a journalctl -o short-iso line, else None.
-
-    Malformed-but-digit-shaped stamps ("2026-19-99T...") must degrade to None,
-    not crash the whole diagnosis — a broken measurement never becomes a traceback."""
-    m = ISO_TS.match(ln)
-    if not m:
-        return None
-    try:
-        return time.mktime(time.strptime(m.group(1), "%Y-%m-%dT%H:%M:%S"))
-    except (ValueError, OverflowError):
-        return None
+    "Classified", "send_failures session_lines noise unknown_errors")
 
 
 def classify(lines):
     """Sort journal lines into the known-error library's buckets.
 
-    Order matters: expiry markers can sit on a send-failure line
-    ("sendmessage failed: errcode=-14") — session must win, because a restart
-    cannot fix it. Poll noise wins over everything: it is never a signal."""
-    c = Classified([], [], 0, [], [])
+    Order matters: session/token expiry wins first — its markers can sit on any
+    line (even a poll retry or a send failure) and a restart cannot fix it.
+    Then poll retries of any flavor are noise (see POLL_NOISE — calibrated,
+    never a signal), then send failures, then the unknown-ERROR catch-all."""
+    c = Classified([], [], 0, [])
     noise = 0
     for ln in lines:
-        if POLL_NOISE.search(ln):
-            noise += 1
-            if POLL_EXHAUST.search(ln):
-                ts = line_ts(ln)
-                if ts is not None:
-                    c.exhaust_ts.append(ts)
-        elif SESSION_EXPIRED.search(ln):
+        if SESSION_EXPIRED.search(ln):
             c.session_lines.append(ln.rstrip())
+        elif POLL_NOISE.search(ln):
+            noise += 1
         elif SEND_FAIL.search(ln):
             c.send_failures.append(ln.rstrip())
         elif UNKNOWN_ERR.search(ln):
             c.unknown_errors.append(ln.rstrip())
     return c._replace(noise=noise)
-
-
-def inbound_broken(exhaust_ts):
-    """Repeated poll-retry exhaustion spanning more than one adapter backoff
-    window — inbound is broken and will NOT self-recover; a single burst would."""
-    return len(exhaust_ts) >= 2 and max(exhaust_ts) - min(exhaust_ts) > EXHAUST_SPAN_S
 
 
 def run(cmd, **kw):
@@ -188,8 +165,7 @@ def run(cmd, **kw):
 def journal_lines(unit, since):
     """Journal lines, or None if journalctl failed (bad --since etc.) — None vs []
     matters: a broken measurement must never read as "no failures = healthy"."""
-    # short-iso (not cat): the timestamps feed the inbound exhaustion-span check
-    r = run(["journalctl", "--user", "-u", unit, "--since", since, "--no-pager", "-o", "short-iso"])
+    r = run(["journalctl", "--user", "-u", unit, "--since", since, "--no-pager", "-o", "cat"])
     if r.returncode != 0:
         print(f"[doctor] journalctl failed: {r.stderr.strip()}", file=sys.stderr)
         return None
@@ -282,8 +258,8 @@ def cmd_diagnose(args):
         note(verdict="session-expired", evidence=c.session_lines[-3:],
              next=["if evidence is fresh (<15 min): re-run diagnose in ~15 min — the "
                    "adapter may self-recover after its 10-min pause",
-                   "else escalate: user re-runs `hermes gateway setup` THEMSELVES, then "
-                   "restarts from their own shell"])
+                   "else notify the OPERATOR (not the complaining visitor): they re-run "
+                   "`hermes gateway setup` THEMSELVES, then restart from their own shell"])
         say("\nSession/token-expiry evidence (restart will NOT fix this):")
         for ln in c.session_lines[-3:]:
             say(f"  {ln}")
@@ -307,13 +283,6 @@ def cmd_diagnose(args):
             say(f"  {ln}")
         say("\nruled-out causes (do not re-investigate): " + "; ".join(EXCLUDED_CAUSES))
         say("VERDICT: stale gateway state -> restart recommended.")
-        _next_restart()
-        return finish(1)
-    if inbound_broken(c.exhaust_ts):
-        note(verdict="inbound-broken", exhausted_bursts=len(c.exhaust_ts))
-        say(f"\npoll retries exhausted {len(c.exhaust_ts)}x spanning >10 min — the "
-            "adapter's built-in 10-min backoff is not recovering.")
-        say("VERDICT: inbound (getupdates) broken -> restart recommended.")
         _next_restart()
         return finish(1)
     if c.unknown_errors:
@@ -418,7 +387,8 @@ def cmd_verify(args):
     if c.send_failures or c.session_lines:
         note(verdict="still-failing",
              evidence=(c.send_failures + c.session_lines)[-5:],
-             next=["escalate: user re-runs `hermes gateway setup` THEMSELVES (QR re-scan)"])
+             next=["notify the OPERATOR (not the complaining visitor): they re-run "
+                   "`hermes gateway setup` THEMSELVES (QR re-scan)"])
         say(f"VERDICT: still {len(c.send_failures) + len(c.session_lines)} failure(s) "
             f"since {since!r} — escalate: {ESCALATE}")
         return finish(1)
@@ -442,16 +412,65 @@ def cmd_verify(args):
     return finish(0)
 
 
+# auto: bound the diagnose window at the unit's last start when it started
+# recently, so pre-restart failures can't re-trigger restarts forever.
+AUTO_WINDOW_S = 3 * 3600
+
+
+def cmd_auto(args):
+    """Unattended selfcheck for the systemd timer — self-heal what is SAFE to
+    self-heal without a human/agent in the loop:
+
+    - not-running            -> systemctl --user start (timer runs OUTSIDE the unit)
+    - send-failures/unknown  -> guarded restart (dedup + rate limit apply unchanged)
+    - hang                   -> REPORT ONLY: unattended absence-of-logs is the classic
+                                false-positive restart machine; WatchdogSec is the
+                                right tool for real hangs
+    - session-expired        -> exit 3; the selfcheck unit shows failed so the
+                                operator sees it (QR re-scan is human-only anyway)
+    """
+    start = since_last_start(args.unit)
+    if start:
+        try:
+            if time.time() - time.mktime(time.strptime(start, "%Y-%m-%d %H:%M:%S")) < AUTO_WINDOW_S:
+                args.since = start
+        except ValueError:
+            pass
+    rc = cmd_diagnose(args)
+    verdict = _OUT.get("verdict")
+    if rc == 2:
+        say("\n[auto] starting the unit (safe: the timer runs outside the gateway's cgroup)")
+        r = run(["systemctl", "--user", "start", args.unit])
+        return 0 if r.returncode == 0 else 2
+    if rc != 1:
+        return rc
+    if verdict == "hang":
+        say("\n[auto] hang is REPORT-ONLY when unattended — absence of logs is too weak "
+            "a signal for an unattended restart (chronic poll noise means a live gateway "
+            "is never silent for long). Enable WatchdogSec for real hang coverage.")
+        return 1
+    say("\n[auto] restart-worthy verdict — proceeding to guarded restart (unattended; "
+        "no user reply possible from a timer).")
+    return cmd_restart(argparse.Namespace(unit=args.unit, delay=args.delay,
+                                          state_dir=args.state_dir, force=False))
+
+
 def main(argv=None):
     p = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     p.add_argument("--unit", default=DEFAULT_UNIT, type=unit_name,
                    help=f"systemd user unit (default: {DEFAULT_UNIT})")
     p.add_argument("--json", action="store_true",
-                   help="emit ONE machine-readable JSON verdict on stdout (fields: "
-                        "verdict/next/suggested_reply/evidence/exit) instead of prose")
+                   help="force the machine-readable JSON verdict (fields: verdict/next/"
+                        "suggested_reply/evidence/exit). Already the DEFAULT when stdout "
+                        "is not a TTY — an agent reading through a pipe always gets fields "
+                        "and cannot forget a flag; prose is for humans at a terminal.")
+    p.add_argument("--prose", action="store_true",
+                   help="force human-readable prose even when stdout is piped")
     sub = p.add_subparsers(dest="cmd", required=True)
 
-    d = sub.add_parser("diagnose", help="classify recent journal lines, print verdict")
+    d = sub.add_parser("diagnose", help="classify journal -> ONE verdict; exit 0 healthy / "
+                                        "1 restart-worthy / 2 not running / 3 session "
+                                        "expired / 4 journal unreadable")
     d.add_argument("--since", default="30 min ago")
     d.set_defaults(fn=cmd_diagnose)
 
@@ -469,8 +488,16 @@ def main(argv=None):
                    help="window start (default: the unit's last activation, else '5 min ago')")
     v.set_defaults(fn=cmd_verify)
 
+    a = sub.add_parser("auto", help="unattended selfcheck (systemd timer): diagnose + safe self-heal")
+    a.add_argument("--since", default="3 hours ago",
+                   help="max window; bounded at the unit's last start when more recent")
+    a.add_argument("--delay", type=positive_int, default=5)
+    a.add_argument("--state-dir", default=str(pathlib.Path.home() / ".local/state/hermes-gateway-doctor"))
+    a.set_defaults(fn=cmd_auto)
+
     args = p.parse_args(argv)
-    _MODE["json"] = args.json
+    isatty = getattr(sys.stdout, "isatty", lambda: False)
+    _MODE["json"] = args.json or (not args.prose and not isatty())
     _OUT.clear()
     _OUT.update({"cmd": args.cmd, "unit": args.unit})
     _LINES.clear()

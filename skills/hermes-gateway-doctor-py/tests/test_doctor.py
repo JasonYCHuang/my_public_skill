@@ -12,12 +12,20 @@ import pytest
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent.parent / "scripts"))
 
 import doctor  # noqa: E402
-from doctor import classify, inbound_broken, line_ts, positive_int, unit_name  # noqa: E402
+from doctor import classify, positive_int, unit_name  # noqa: E402
 
 NOISE = [
     "ERROR gateway.platforms.weixin: [Weixin] poll error (1/3): iLink POST ilink/bot/getupdates HTTP 524:",
     "ERROR gateway.platforms.weixin: [Weixin] poll error (2/3): iLink POST ilink/bot/getupdates HTTP 524:",
     "ERROR gateway.platforms.weixin: [Weixin] poll error (3/3): iLink POST ilink/bot/getupdates HTTP 554:",
+]
+
+# Verbatim from the 2026-07-23 calibration (72h of production journal): poll
+# errors WITHOUT the "getupdates HTTP 5xx" signature — still pure noise.
+CONNECT_NOISE = [
+    "ERROR gateway.platforms.weixin: [Weixin] poll error (1/3): Cannot connect to host ilinkai.wechat.com:443 ssl:default [Connect call failed ('43.159.94.110', 443)]",
+    "ERROR gateway.platforms.weixin: [Weixin] poll error (3/3): [Errno 104] Connection reset by peer",
+    "ERROR gateway.platforms.weixin: [Weixin] poll error (3/3): Server disconnected",
 ]
 
 FAILURES = [
@@ -44,13 +52,6 @@ HEALTHY = [
     "INFO gateway.run: message delivered",
     "WARNING tools.registry: check_fn check_browser_requirements returned False; dependent tools will be unavailable this turn",
 ]
-
-
-def exhaust_line(hhmm):
-    """A timestamped (journalctl -o short-iso) final-retry poll failure."""
-    return (f"2026-07-22T{hhmm}:00+0800 host hermes-gateway[7]: "
-            "ERROR gateway.platforms.weixin: [Weixin] poll error (3/3): "
-            "iLink POST ilink/bot/getupdates HTTP 524:")
 
 
 def test_noise_is_counted_not_flagged():
@@ -113,17 +114,7 @@ def test_unknown_error_lines_are_caught_not_dropped():
     assert c.send_failures == []
 
 
-# --- inbound exhaustion: single bursts self-recover, repeated bursts don't ---
-
-
-def test_line_ts_parses_short_iso_prefix_only():
-    assert line_ts(exhaust_line("12:00")) is not None
-    assert line_ts(NOISE[2]) is None  # no timestamp prefix -> no span claim
-
-
-def test_line_ts_malformed_stamp_degrades_to_none_not_crash():
-    # digit-shaped but invalid: passes the regex, must not traceback the diagnosis
-    assert line_ts("2026-19-99T99:99:99+0800 host x[1]: ERROR poll error (3/3)") is None
+# --- calibration regressions (2026-07-23, 72h of production journal) ---
 
 
 def test_recent_restarts_survives_a_corrupt_state_file(tmp_path):
@@ -135,27 +126,40 @@ def test_recent_restarts_survives_a_corrupt_state_file(tmp_path):
     assert doctor.recent_restarts(state) == 0
 
 
-def test_single_exhausted_burst_respects_adapter_backoff():
-    # The adapter pauses 10 min and retries by itself — one burst (even the
-    # final 3/3 retry) must NOT trigger a restart.
-    c = classify([exhaust_line("12:00"), exhaust_line("12:04")])
-    assert not inbound_broken(c.exhaust_ts)
-    assert c.noise == 2  # still counted as poll noise
+def test_connect_failure_poll_errors_are_noise_not_unknown():
+    # Calibration caught this: connect-level poll failures lack the
+    # "getupdates HTTP 5xx" signature — a narrower POLL_NOISE let them fall
+    # into the unknown-ERROR bucket and trigger a needless restart.
+    c = classify(CONNECT_NOISE)
+    assert c.unknown_errors == []
+    assert c.send_failures == []
+    assert c.noise == 3
 
 
-def test_repeated_exhaustion_across_backoff_windows_means_inbound_broken():
-    c = classify([exhaust_line("12:00"), exhaust_line("12:25")])
-    assert inbound_broken(c.exhaust_ts)
+def test_chronic_final_retry_exhaustion_is_healthy():
+    # THE calibration lesson: a healthy gateway logs the (1/3)(2/3)(3/3) cycle
+    # every ~90s all day (782 final-retry lines in 72h, traffic flowing fine).
+    # No amount of poll-error repetition may ever produce a restart verdict.
+    chronic = (NOISE + CONNECT_NOISE) * 200  # ~30-min window at real cadence
+    c = classify(chronic)
+    assert c.send_failures == [] and c.unknown_errors == []
+    assert c.noise == len(chronic)
 
 
-def test_diagnose_inbound_broken_recommends_restart(monkeypatch, capsys):
+def test_diagnose_stays_healthy_under_chronic_poll_noise(monkeypatch, capsys):
     monkeypatch.setattr(doctor, "unit_active", lambda unit: "active")
     monkeypatch.setattr(doctor, "journal_lines",
-                        lambda unit, since: [exhaust_line("12:00"), exhaust_line("12:25")])
-    assert doctor.main(["diagnose"]) == 1
-    out = capsys.readouterr().out
-    assert "inbound" in out
-    assert doctor.SUGGESTED_REPLY in out
+                        lambda unit, since: (NOISE + CONNECT_NOISE) * 200 + HEALTHY)
+    monkeypatch.setattr(doctor, "watchdog_usec", lambda unit: "0")
+    assert doctor.main(["--prose", "diagnose"]) == 0
+    assert "healthy" in capsys.readouterr().out
+
+
+def test_kanban_tick_failure_lands_in_the_catch_all():
+    # Real unknown-bucket resident found during calibration — documents that
+    # the catch-all (not silence) is the current policy for it.
+    c = classify(["ERROR gateway.run: kanban dispatcher: tick failed on board default"])
+    assert len(c.unknown_errors) == 1
 
 
 # --- boundary validation: caller input is LLM-generated — validate, don't trust ---
@@ -167,7 +171,7 @@ def test_broken_journal_read_is_not_healthy(monkeypatch):
     monkeypatch.setattr(doctor, "journal_lines", lambda unit, since: None)
     monkeypatch.setattr(doctor, "unit_active", lambda unit: "active")
     assert doctor.main(["diagnose", "--since", "30 minutes go"]) == 4
-    assert doctor.main(["verify"]) == 4
+    assert doctor.main(["--prose", "verify"]) == 4
 
 
 def test_journal_lines_returns_none_not_empty_on_journalctl_failure(monkeypatch):
@@ -204,7 +208,7 @@ def test_delay_must_be_at_least_one_second():
 def test_restart_verdict_carries_the_full_playbook(monkeypatch, capsys):
     monkeypatch.setattr(doctor, "unit_active", lambda unit: "active")
     monkeypatch.setattr(doctor, "journal_lines", lambda unit, since: NOISE + FAILURES)
-    assert doctor.main(["diagnose"]) == 1
+    assert doctor.main(["--prose", "diagnose"]) == 1
     out = capsys.readouterr().out
     assert "ruled-out causes" in out                    # don't re-investigate false causes
     assert doctor.SUGGESTED_REPLY in out                # reply-in-text-first, message included
@@ -214,7 +218,7 @@ def test_restart_verdict_carries_the_full_playbook(monkeypatch, capsys):
 def test_session_expired_verdict_hands_qr_rescan_to_the_user(monkeypatch, capsys):
     monkeypatch.setattr(doctor, "unit_active", lambda unit: "active")
     monkeypatch.setattr(doctor, "journal_lines", lambda unit, since: FAILURES + SESSION)
-    assert doctor.main(["diagnose"]) == 3
+    assert doctor.main(["--prose", "diagnose"]) == 3
     out = capsys.readouterr().out
     assert "hermes gateway setup" in out
     assert "never run it via scripts" in out
@@ -225,7 +229,7 @@ def test_session_expiry_alone_escalates_without_needing_send_failures(monkeypatc
     # failures were ALSO present, so a pure-expiry log read as healthy).
     monkeypatch.setattr(doctor, "unit_active", lambda unit: "active")
     monkeypatch.setattr(doctor, "journal_lines", lambda unit, since: SESSION)
-    assert doctor.main(["diagnose"]) == 3
+    assert doctor.main(["--prose", "diagnose"]) == 3
     assert "self-recover" in capsys.readouterr().out  # fresh expiry may heal itself
 
 
@@ -234,20 +238,20 @@ def test_active_but_silent_journal_is_a_hang_not_healthy(monkeypatch, capsys):
     # lines while active -> likely hung event loop -> restart, never "healthy".
     monkeypatch.setattr(doctor, "unit_active", lambda unit: "active")
     monkeypatch.setattr(doctor, "journal_lines", lambda unit, since: [])
-    assert doctor.main(["diagnose"]) == 1
+    assert doctor.main(["--prose", "diagnose"]) == 1
     out = capsys.readouterr().out
     assert "hung" in out
     assert "wider --since" in out  # idle-window caveat is part of the verdict
 
     # ...but "not running" still wins over "silent":
     monkeypatch.setattr(doctor, "unit_active", lambda unit: "inactive")
-    assert doctor.main(["diagnose"]) == 2
+    assert doctor.main(["--prose", "diagnose"]) == 2
 
 
 def test_unknown_error_verdict_restarts_once_with_provenance(monkeypatch, capsys):
     monkeypatch.setattr(doctor, "unit_active", lambda unit: "active")
     monkeypatch.setattr(doctor, "journal_lines", lambda unit, since: HEALTHY + UNKNOWN)
-    assert doctor.main(["diagnose"]) == 1
+    assert doctor.main(["--prose", "diagnose"]) == 1
     out = capsys.readouterr().out
     assert "unrecognized errors" in out
     assert UNKNOWN[0] in out                      # raw line shown, not paraphrased
@@ -262,24 +266,24 @@ def test_healthy_verdict_points_outside_the_gateway_and_reports_watchdog(monkeyp
     monkeypatch.setattr(doctor, "unit_active", lambda unit: "active")
     monkeypatch.setattr(doctor, "journal_lines", lambda unit, since: NOISE + HEALTHY)
     monkeypatch.setattr(doctor, "watchdog_usec", lambda unit: "0")
-    assert doctor.main(["diagnose"]) == 0
+    assert doctor.main(["--prose", "diagnose"]) == 0
     out = capsys.readouterr().out
     assert "OUTSIDE" in out
     assert "watchdog is OFF" in out
 
     monkeypatch.setattr(doctor, "watchdog_usec", lambda unit: "1min")
-    assert doctor.main(["diagnose"]) == 0
+    assert doctor.main(["--prose", "diagnose"]) == 0
     assert "WatchdogUSec=1min" in capsys.readouterr().out
 
 
 def test_verify_failure_escalates_and_success_demands_end_to_end_proof(monkeypatch, capsys):
     monkeypatch.setattr(doctor, "unit_active", lambda unit: "active")
     monkeypatch.setattr(doctor, "journal_lines", lambda unit, since: FAILURES)
-    assert doctor.main(["verify"]) == 1
+    assert doctor.main(["--prose", "verify"]) == 1
     assert "hermes gateway setup" in capsys.readouterr().out
 
     monkeypatch.setattr(doctor, "journal_lines", lambda unit, since: HEALTHY)
-    assert doctor.main(["verify"]) == 0
+    assert doctor.main(["--prose", "verify"]) == 0
     assert "re-send an image" in capsys.readouterr().out
 
 
@@ -289,7 +293,7 @@ def test_verify_unknown_error_survivor_means_blind_restart_is_spent(monkeypatch,
     # the pattern be added to the known-error library — not restart again.
     monkeypatch.setattr(doctor, "unit_active", lambda unit: "active")
     monkeypatch.setattr(doctor, "journal_lines", lambda unit, since: HEALTHY + UNKNOWN)
-    assert doctor.main(["verify"]) == 1
+    assert doctor.main(["--prose", "verify"]) == 1
     out = capsys.readouterr().out
     assert "survived the restart" in out
     assert "add this error's pattern" in out
@@ -300,13 +304,13 @@ def test_diagnose_healthy_and_not_running(monkeypatch, capsys):
     monkeypatch.setattr(doctor, "journal_lines", lambda unit, since: NOISE + HEALTHY)
     monkeypatch.setattr(doctor, "unit_active", lambda unit: "active")
     monkeypatch.setattr(doctor, "watchdog_usec", lambda unit: "0")
-    assert doctor.main(["diagnose"]) == 0
+    assert doctor.main(["--prose", "diagnose"]) == 0
     assert "healthy" in capsys.readouterr().out
 
     monkeypatch.setattr(doctor, "unit_active", lambda unit: "inactive")
-    assert doctor.main(["diagnose"]) == 2
+    assert doctor.main(["--prose", "diagnose"]) == 2
     assert "systemctl --user start" in capsys.readouterr().out
-    assert doctor.main(["verify"]) == 2
+    assert doctor.main(["--prose", "verify"]) == 2
 
 
 # --- cmd_restart: the safety-critical paths ---
@@ -334,7 +338,7 @@ def test_restart_schedules_detached_delayed_transient_unit(monkeypatch, capsys, 
     fake = FakeRun([0, 0])  # list-timers, systemd-run
     monkeypatch.setattr(doctor, "run", fake)
     monkeypatch.setattr(doctor, "inside_unit", lambda unit: True)
-    assert doctor.main(restart_argv(tmp_path)) == 0
+    assert doctor.main(["--prose", *restart_argv(tmp_path)]) == 0
     cmd = fake.calls[1]
     assert cmd[0] == "systemd-run" and "--collect" in cmd and "--on-active=5s" in cmd
     assert cmd[-4:] == ["systemctl", "--user", "restart", "hermes-gateway"]
@@ -349,14 +353,14 @@ def test_restart_never_direct_restarts_from_inside_the_unit(monkeypatch, tmp_pat
     fake = FakeRun([0, 1])
     monkeypatch.setattr(doctor, "run", fake)
     monkeypatch.setattr(doctor, "inside_unit", lambda unit: True)
-    assert doctor.main(restart_argv(tmp_path)) == 1
+    assert doctor.main(["--prose", *restart_argv(tmp_path)]) == 1
     assert len(fake.calls) == 2  # list-timers + systemd-run, no direct restart
 
     # Outside the unit the fallback IS safe and must engage:
     fake = FakeRun([0, 1, 0])
     monkeypatch.setattr(doctor, "run", fake)
     monkeypatch.setattr(doctor, "inside_unit", lambda unit: False)
-    assert doctor.main(restart_argv(tmp_path)) == 0
+    assert doctor.main(["--prose", *restart_argv(tmp_path)]) == 0
     assert fake.calls[2] == ["systemctl", "--user", "restart", "hermes-gateway"]
 
 
@@ -365,7 +369,7 @@ def test_restart_does_not_stack_on_a_pending_timer(monkeypatch, tmp_path):
     fake = FakeRun([(0, "Mon 2026-07-22 12:00:05 CST  5s left  -  -  "
                        "gateway-doctor-restart-123.timer  gateway-doctor-restart-123.service")])
     monkeypatch.setattr(doctor, "run", fake)
-    assert doctor.main(restart_argv(tmp_path)) == 0
+    assert doctor.main(["--prose", *restart_argv(tmp_path)]) == 0
     assert len(fake.calls) == 1  # only the list-timers probe; nothing scheduled
 
 
@@ -377,7 +381,7 @@ def test_restart_frequency_guard_escalates_instead_of_looping(monkeypatch, capsy
     doctor.note_restart(state)
     fake = FakeRun([])
     monkeypatch.setattr(doctor, "run", fake)
-    assert doctor.main(restart_argv(tmp_path)) == 3
+    assert doctor.main(["--prose", *restart_argv(tmp_path)]) == 3
     assert "hermes gateway setup" in capsys.readouterr().out  # points at escalation
     assert fake.calls == []                                   # no restart attempted
 
@@ -398,11 +402,11 @@ def test_verify_window_starts_at_last_unit_activation(monkeypatch):
     monkeypatch.setattr(doctor, "unit_active", lambda unit: "active")
     monkeypatch.setattr(doctor, "journal_lines", fake_journal)
     monkeypatch.setattr(doctor, "since_last_start", lambda unit: "2026-07-22 12:00:05")
-    assert doctor.main(["verify"]) == 0
+    assert doctor.main(["--prose", "verify"]) == 0
     assert seen["since"] == "2026-07-22 12:00:05"
 
     monkeypatch.setattr(doctor, "since_last_start", lambda unit: None)
-    assert doctor.main(["verify"]) == 0
+    assert doctor.main(["--prose", "verify"]) == 0
     assert seen["since"] == "5 min ago"  # fallback when activation time unknown
 
 
@@ -425,6 +429,76 @@ def test_inside_unit_reads_cgroup(tmp_path):
 def test_run_reports_missing_binary_without_traceback():
     r = doctor.run(["doctor-no-such-binary-xyz"])
     assert r.returncode == 127 and "command not found" in r.stderr
+
+
+# --- auto: unattended selfcheck (the timer's brain) ---
+
+
+def test_auto_restarts_on_send_failures_with_guards(monkeypatch, capsys, tmp_path):
+    monkeypatch.setattr(doctor, "unit_active", lambda unit: "active")
+    monkeypatch.setattr(doctor, "journal_lines", lambda unit, since: FAILURES)
+    monkeypatch.setattr(doctor, "since_last_start", lambda unit: None)
+    fake = FakeRun([0, 0])  # list-timers, systemd-run
+    monkeypatch.setattr(doctor, "run", fake)
+    monkeypatch.setattr(doctor, "inside_unit", lambda unit: False)
+    assert doctor.main(["--prose", "auto", "--state-dir", str(tmp_path / "s")]) == 0
+    assert fake.calls[1][0] == "systemd-run"  # went through the guarded restart path
+    assert "unattended" in capsys.readouterr().out
+
+
+def test_auto_starts_a_dead_unit_instead_of_restarting(monkeypatch, capsys, tmp_path):
+    monkeypatch.setattr(doctor, "unit_active", lambda unit: "inactive")
+    monkeypatch.setattr(doctor, "journal_lines", lambda unit, since: [])
+    monkeypatch.setattr(doctor, "since_last_start", lambda unit: None)
+    fake = FakeRun([0])
+    monkeypatch.setattr(doctor, "run", fake)
+    assert doctor.main(["--prose", "auto", "--state-dir", str(tmp_path / "s")]) == 0
+    assert fake.calls[0] == ["systemctl", "--user", "start", "hermes-gateway"]
+
+
+def test_auto_hang_is_report_only(monkeypatch, capsys, tmp_path):
+    # Unattended absence-of-logs must never restart: a live gateway is never
+    # silent for long (chronic poll noise), but the cost of being wrong here is
+    # an unattended restart loop at 3am. WatchdogSec owns real hangs.
+    monkeypatch.setattr(doctor, "unit_active", lambda unit: "active")
+    monkeypatch.setattr(doctor, "journal_lines", lambda unit, since: [])
+    monkeypatch.setattr(doctor, "since_last_start", lambda unit: None)
+    fake = FakeRun([])
+    monkeypatch.setattr(doctor, "run", fake)
+    assert doctor.main(["--prose", "auto", "--state-dir", str(tmp_path / "s")]) == 1
+    assert fake.calls == []  # no restart, no start — report only
+    assert "REPORT-ONLY" in capsys.readouterr().out
+
+
+def test_auto_bounds_window_at_a_recent_unit_start(monkeypatch, tmp_path):
+    # Pre-restart failures still sit inside "3 hours ago" — without the bound,
+    # every tick would re-see them and restart again until the rate guard trips.
+    seen = {}
+
+    def fake_journal(unit, since):
+        seen["since"] = since
+        return HEALTHY
+
+    recent = doctor.time.strftime("%Y-%m-%d %H:%M:%S",
+                                  doctor.time.localtime(doctor.time.time() - 60))
+    monkeypatch.setattr(doctor, "unit_active", lambda unit: "active")
+    monkeypatch.setattr(doctor, "journal_lines", fake_journal)
+    monkeypatch.setattr(doctor, "since_last_start", lambda unit: recent)
+    monkeypatch.setattr(doctor, "watchdog_usec", lambda unit: "0")
+    assert doctor.main(["--prose", "auto", "--state-dir", str(tmp_path / "s")]) == 0
+    assert seen["since"] == recent
+
+
+def test_auto_session_expiry_surfaces_as_exit_3(monkeypatch, tmp_path):
+    # The selfcheck unit going "failed" is how the operator finds out — auto
+    # must not swallow it, and must not try a (useless) restart.
+    monkeypatch.setattr(doctor, "unit_active", lambda unit: "active")
+    monkeypatch.setattr(doctor, "journal_lines", lambda unit, since: SESSION)
+    monkeypatch.setattr(doctor, "since_last_start", lambda unit: None)
+    fake = FakeRun([])
+    monkeypatch.setattr(doctor, "run", fake)
+    assert doctor.main(["--prose", "auto", "--state-dir", str(tmp_path / "s")]) == 3
+    assert fake.calls == []
 
 
 # --- --json: the agent reads FIELDS, never scrapes prose ---
@@ -476,6 +550,26 @@ def test_json_verify_unknown_survivor_demands_pattern_and_test(monkeypatch, caps
     assert any("pytest" in step for step in data["next"])
 
 
+def test_piped_stdout_defaults_to_json():
+    # The agent always consumes doctor through a pipe — it must get fields
+    # WITHOUT remembering any flag (the old "一律帶 --json" prose rule, now code).
+    # Prose is reserved for a human at a real TTY (or --prose).
+    r = subprocess.run([sys.executable, doctor.__file__, "diagnose"],
+                       capture_output=True, text=True)
+    data = json.loads(r.stdout)  # whatever the verdict, stdout must be pure JSON
+    assert data["cmd"] == "diagnose"
+
+
+def test_escalation_is_routed_to_the_operator_not_the_visitor(monkeypatch, capsys):
+    # The complaining WeChat user may be a visitor; QR re-scan/SSH belongs to
+    # the machine owner. The routing lives in the verdict fields, not in prose.
+    monkeypatch.setattr(doctor, "unit_active", lambda unit: "active")
+    monkeypatch.setattr(doctor, "journal_lines", lambda unit, since: SESSION)
+    assert doctor.main(["--json", "diagnose"]) == 3
+    data = json.loads(capsys.readouterr().out)
+    assert any("OPERATOR" in step for step in data["next"])
+
+
 def test_json_mode_state_does_not_leak_between_invocations(monkeypatch, capsys):
     # main() must reset json mode and fields each call — a --json run followed
     # by a prose run (and vice versa) must not mix outputs or stale verdicts.
@@ -486,7 +580,7 @@ def test_json_mode_state_does_not_leak_between_invocations(monkeypatch, capsys):
 
     monkeypatch.setattr(doctor, "journal_lines", lambda unit, since: HEALTHY)
     monkeypatch.setattr(doctor, "watchdog_usec", lambda unit: "0")
-    assert doctor.main(["diagnose"]) == 0
+    assert doctor.main(["--prose", "diagnose"]) == 0
     out = capsys.readouterr().out
     assert "healthy" in out and not out.lstrip().startswith("{")  # prose mode back
 

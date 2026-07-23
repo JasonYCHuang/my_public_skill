@@ -20,7 +20,7 @@ MUTANTS = [
     ("M2 journal 讀不到改回傳 []（假 healthy 復活）",
      'return None\n    return r.stdout.splitlines()', 'return []\n    return r.stdout.splitlines()'),
     ("M3 噪音 regex 改過寬（吞掉真送信失敗）",
-     r'poll error \(\d/\d\).*getupdates HTTP 5\d\d', r'HTTP 5\d\d'),
+     r'poll error \(\d/\d\)', r'ERROR'),
     ("M4 verify 窗口不再從本次啟動起算",
      'since = args.since or since_last_start(args.unit) or "5 min ago"',
      'since = args.since or "5 min ago"'),
@@ -30,12 +30,13 @@ MUTANTS = [
      "if pending_restart():", "if False:"),
     ("M7 unit 名驗證錨點拔掉（-n 之類混得進去）",
      "^[A-Za-z0-9][A-Za-z0-9:_.@-]*$", "[A-Za-z0-9]"),
-    ("M8 inbound 閾值改成永不觸發（跨退避週期的耗盡被無視）",
-     "EXHAUST_SPAN_S = 600", "EXHAUST_SPAN_S = 999999"),
-    ("M9 拔掉未知錯誤 catch-all（沒見過的 ERROR 靜默流失）",
+    ("M8 拔掉未知錯誤 catch-all（沒見過的 ERROR 靜默流失）",
      "elif UNKNOWN_ERR.search(ln):", "elif False:"),
-    ("M10 session 判斷退回 v1（單獨過期證據被當 healthy）",
+    ("M9 session 判斷退回 v1（單獨過期證據被當 healthy）",
      "if c.session_lines:", "if c.session_lines and c.send_failures:"),
+    ("M10 噪音 regex 改過窄（connect 失敗掉進 catch-all 誤觸重啟）",
+     "POLL_NOISE = re.compile(r\"poll error \\(\\d/\\d\\)\")",
+     "POLL_NOISE = re.compile(r\"poll error \\(\\d/\\d\\).*getupdates HTTP 5\\d\\d\")"),
 ]
 
 
