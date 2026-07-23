@@ -64,15 +64,22 @@ WantedBy=timers.target
     return service, timer
 
 
-def install(args: argparse.Namespace) -> None:
+def build_prog(args: argparse.Namespace) -> list[str]:
+    """組出 ExecStart 指令列。抽成純函式讓沒有 systemd 的機器也測得到。"""
     dest = Path(args.dest).expanduser().resolve()
     prog = [sys.executable, str(BACKUP_PY), "--dest", str(dest)]
     if args.source:
         prog += ["--source", str(Path(args.source).expanduser().resolve())]
     if args.keep_days is not None:
         prog += ["--keep-days", str(args.keep_days)]
+    if args.rclone_remote:
+        prog += ["--rclone-remote", args.rclone_remote]
+    return prog
 
-    service, timer = build_units(prog, parse_times(args.times))
+
+def install(args: argparse.Namespace) -> None:
+    dest = Path(args.dest).expanduser().resolve()
+    service, timer = build_units(build_prog(args), parse_times(args.times))
     UNIT_DIR.mkdir(parents=True, exist_ok=True)
     (UNIT_DIR / f"{UNIT}.service").write_text(service)
     (UNIT_DIR / f"{UNIT}.timer").write_text(timer)
@@ -82,7 +89,8 @@ def install(args: argparse.Namespace) -> None:
     print(f"✓ 已安裝並啟用 {UNIT}.timer")
     print(f"  排程（本機時間）：{args.times}（Persistent=true，停機錯過會補跑）")
     print(f"  units：{UNIT_DIR}/{UNIT}.{{service,timer}}")
-    print(f"  目的地：{dest}")
+    print(f"  目的地：{dest}"
+          + (f"，並 rclone sync 到 {args.rclone_remote}" if args.rclone_remote else ""))
     linger = sh("loginctl", "show-user", Path.home().name, "--property=Linger", check=False)
     if "Linger=yes" not in linger.stdout:
         print(f"⚠️  linger 未開，無登入 session 時 timer 不會跑：loginctl enable-linger {Path.home().name}")
@@ -116,6 +124,8 @@ def main() -> None:
     p_install.add_argument("--times", default="0:30,6:30,12:30,18:30")
     p_install.add_argument("--source", default=None)
     p_install.add_argument("--keep-days", type=int, default=None)
+    p_install.add_argument("--rclone-remote", default=None,
+                           help="再 rclone sync 到遠端（如 icloud:Backups/mein-agent-storage）")
     sub.add_parser("status")
     sub.add_parser("run-now")
     sub.add_parser("uninstall")

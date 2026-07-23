@@ -28,11 +28,20 @@ python3 scripts/install_launchd.py status    # 檢查狀態
 
 ### Linux（如 Ubuntu 上的 hermes agent）
 
-Linux 沒有 iCloud 客戶端，`--dest` 必填（本機路徑或掛載點）：
+Linux 沒有 iCloud 客戶端，`--dest` 必填（本機 staging）；要真正落在 iCloud，
+加 `--rclone-remote`（rclone ≥ 1.68 的 `iclouddrive` backend；ADP 須關、
+session 約 1–2 個月要 reconnect）：
 
 ```bash
-python3 scripts/install_systemd.py install --dest /path/to/backup-target
+python3 scripts/install_systemd.py install --dest ~/backups/icloud-staging \
+    --rclone-remote icloud:Backups/mein-agent-storage
 loginctl enable-linger $USER   # 無人值守機器必開，否則沒登入時 timer 不跑
+```
+
+健康檢查（一個 verdict，不用讀 report/journal）：
+
+```bash
+python3 scripts/check.py --dest ~/backups/icloud-staging --rclone-remote icloud:... --json
 ```
 
 systemd user timer + `Persistent=true`，語意對應 launchd（停機錯過開機補跑）。
@@ -58,5 +67,7 @@ tar -xzf ".../snapshots/YYYYMMDD.tar.gz" -C /tmp/restore/
 |---|---|
 | `scripts/backup.py` | 單次備份：鏡像 + 每日快照 + 修剪 + 報告 |
 | `scripts/install_launchd.py` | macOS launchd 排程 install / status / run-now / uninstall |
-| `scripts/install_systemd.py` | Linux systemd user timer，同一組子指令，`--dest` 必填 |
-| `tests/test_backup.py` | 自動測試（鏡像、刪除傳播、快照冪等、修剪、鎖、Linux 缺 dest 報錯、systemd unit 內容） |
+| `scripts/install_systemd.py` | Linux systemd user timer，同一組子指令，`--dest` 必填、`--rclone-remote` 選配 |
+| `scripts/check.py` | 健康檢查 verdict 機器（OK/STALE/AUTH_EXPIRED/... + remedy），`--json` 契約 |
+| `tests/test_backup.py` | 自動測試（鏡像、刪除傳播、快照冪等、修剪、鎖、rclone 上傳腿、check verdicts、systemd unit 內容） |
+| `tests/fake_rclone.py` | 測試用假 rclone（sync/copyto/lsd/listremotes + 故障注入） |
